@@ -29,9 +29,13 @@ struct ReaderView: View {
     @State private var showingPasswordSheet = false
     @State private var passwordError: String?
     @State private var showingSignatureSheet = false
-    @State private var showingSignaturePlacement = false
-    @State private var pendingSignatureImage: UIImage?
-    @State private var pendingSignaturePageIndex: Int = 0
+    /// Intermediate buffer: SignatureSheet's onSelect stores into this; when
+    /// the signature sheet finishes dismissing (onDismiss) we hand it to
+    /// `placementTrigger` to present the placement sheet. Two states are
+    /// needed because SwiftUI can't present a sheet while another is still
+    /// dismissing.
+    @State private var capturedSignature: PlacementTrigger?
+    @State private var placementTrigger: PlacementTrigger?
     @State private var showingPageEditor = false
     @State private var showingInkSheet = false
     @State private var inkPageIndex: Int = 0
@@ -167,36 +171,37 @@ struct ReaderView: View {
         .sheet(
             isPresented: $showingSignatureSheet,
             onDismiss: {
-                // If the picker handed back an image, chain into the
-                // placement sheet so the user can drag/resize before stamping.
-                if pendingSignatureImage != nil {
-                    showingSignaturePlacement = true
+                // Hand the captured signature to the placement-trigger
+                // binding once the picker has finished dismissing. This
+                // pattern (intermediate capture + .sheet(item:)) avoids
+                // the race where pendingSignatureImage briefly reads as
+                // nil while SwiftUI builds the second sheet's content.
+                if let captured = capturedSignature {
+                    placementTrigger = captured
+                    capturedSignature = nil
                 }
             }
         ) {
             SignatureSheet { image in
-                pendingSignatureImage = image
-                pendingSignaturePageIndex = controller.currentPageIndex ?? 0
+                capturedSignature = PlacementTrigger(
+                    image: image,
+                    pageIndex: controller.currentPageIndex ?? 0
+                )
             }
         }
-        .sheet(
-            isPresented: $showingSignaturePlacement,
-            onDismiss: { pendingSignatureImage = nil }
-        ) {
-            if let image = pendingSignatureImage {
-                SignaturePlacementSheet(
-                    document: document,
-                    pageIndex: pendingSignaturePageIndex,
-                    signatureImage: image
-                ) { bounds, rotation in
-                    controller.placeSignature(
-                        image,
-                        bounds: bounds,
-                        rotationDegrees: rotation,
-                        onPageAt: pendingSignaturePageIndex
-                    )
-                    document.isSigned = true
-                }
+        .sheet(item: $placementTrigger) { trigger in
+            SignaturePlacementSheet(
+                document: document,
+                pageIndex: trigger.pageIndex,
+                signatureImage: trigger.image
+            ) { bounds, rotation in
+                controller.placeSignature(
+                    trigger.image,
+                    bounds: bounds,
+                    rotationDegrees: rotation,
+                    onPageAt: trigger.pageIndex
+                )
+                document.isSigned = true
             }
         }
         .sheet(isPresented: $showingPageEditor) {
@@ -483,3 +488,12 @@ struct ReaderView: View {
         Label(title, systemImage: systemImage)
     }
 }
+/// Identifiable payload that triggers the signature placement sheet via
+/// `.sheet(item:)`. Carrying the image + page index in one identified
+/// value guarantees SwiftUI never builds the sheet body with a nil image.
+private struct PlacementTrigger: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let pageIndex: Int
+}
+
