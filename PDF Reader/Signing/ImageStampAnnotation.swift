@@ -11,8 +11,10 @@ final class ImageStampAnnotation: PDFAnnotation {
     private let rotationDegrees: CGFloat
 
     /// `rotationDegrees` is the clockwise rotation in degrees, matching
-    /// SwiftUI's RotationGesture convention. We negate it inside `draw`
-    /// because PDF page space is Y-up (positive CG rotation = CCW).
+    /// SwiftUI's RotationGesture convention. In `draw` we apply the Y-flip
+    /// (needed because CGImage data is top-down) *before* rotating, so
+    /// rotation happens inside the already-flipped frame and CW positive
+    /// in SwiftUI maps directly to CW positive in CG after the flip.
     init(image: UIImage, bounds: CGRect, rotationDegrees: CGFloat = 0) {
         self.image = image
         self.rotationDegrees = rotationDegrees
@@ -26,18 +28,26 @@ final class ImageStampAnnotation: PDFAnnotation {
         guard let cgImage = image.cgImage else { return }
         context.saveGState()
 
-        // Move origin to the centre of the annotation bounds in page space.
+        // Move origin to the centre of the annotation bounds in page space
+        // (PDF page space is Y-up).
         context.translateBy(x: bounds.midX, y: bounds.midY)
 
-        // CG rotation is CCW for positive angles in Y-up coordinates; the
-        // SwiftUI gesture reports CW positive, so we invert the sign so
-        // the on-screen preview matches the rendered annotation.
-        if rotationDegrees != 0 {
-            context.rotate(by: -rotationDegrees * .pi / 180)
-        }
-
-        // CGImage bytes are top-down; flip Y so the signature draws upright.
+        // CGImage bytes are top-down, PDF page space is Y-up. Flip Y FIRST
+        // so the image draws upright; everything below operates in
+        // already-flipped space.
+        //
+        // Critically, this must happen *before* the rotation. Applying
+        // scale(1, -1) after a rotation flips the image's local Y axis,
+        // which becomes a mirror in original-screen-space whenever the
+        // rotation isn't a multiple of 180°.
         context.scaleBy(x: 1.0, y: -1.0)
+
+        // After the flip we're in a frame where positive rotations rotate
+        // clockwise on screen, matching SwiftUI's RotationGesture
+        // convention — so we apply `rotationDegrees` without negation.
+        if rotationDegrees != 0 {
+            context.rotate(by: rotationDegrees * .pi / 180)
+        }
 
         let drawRect = CGRect(
             x: -bounds.width / 2,
