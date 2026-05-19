@@ -13,6 +13,7 @@ struct PaywallView: View {
     @State private var isPurchasing = false
     @State private var purchaseError: String?
     @State private var loadAttempted = false
+    @State private var showingCelebration = false
 
     private let features: [(systemImage: String, title: String, subtitle: String)] = [
         ("sparkles", "On-device AI", "Summarize, chat, translate — all private."),
@@ -41,6 +42,7 @@ struct PaywallView: View {
                 }
             }
             .task { await loadOfferings() }
+            .sensoryFeedback(.selection, trigger: selectedTier)
             .alert(
                 "Purchase failed",
                 isPresented: Binding(
@@ -52,7 +54,24 @@ struct PaywallView: View {
             } message: {
                 Text(purchaseError ?? "")
             }
+            .fullScreenCover(isPresented: $showingCelebration) {
+                CelebrationView(
+                    title: "You're Pro!",
+                    subtitle: celebrationSubtitle
+                ) {
+                    Haptics.success()
+                    showingCelebration = false
+                    dismiss()
+                }
+            }
         }
+    }
+
+    private var celebrationSubtitle: String {
+        if trialDescription(for: selectedTier) != nil {
+            return "Your free trial just started.\nEvery Pro feature is unlocked."
+        }
+        return "Every Pro feature is now unlocked.\nThank you for supporting PDF AI."
     }
 
     private var hero: some View {
@@ -284,6 +303,7 @@ struct PaywallView: View {
 
     private func purchase() async {
         guard let package = packageFor(selectedTier) else { return }
+        Haptics.impact(.medium)
         isPurchasing = true
         defer { isPurchasing = false }
         do {
@@ -291,9 +311,11 @@ struct PaywallView: View {
             if result.userCancelled { return }
             await EntitlementStore.shared.refresh()
             if EntitlementStore.shared.isPro {
-                dismiss()
+                Haptics.success()
+                showingCelebration = true
             }
         } catch {
+            Haptics.error()
             purchaseError = error.localizedDescription
         }
     }
@@ -303,9 +325,11 @@ struct PaywallView: View {
             _ = try await Purchases.shared.restorePurchases()
             await EntitlementStore.shared.refresh()
             if EntitlementStore.shared.isPro {
-                dismiss()
+                Haptics.success()
+                showingCelebration = true
             }
         } catch {
+            Haptics.error()
             purchaseError = error.localizedDescription
         }
     }

@@ -28,6 +28,9 @@ struct LibraryHomeView: View {
     @State private var renameText = ""
     @State private var newTagDocument: Document?
     @State private var newTagName = ""
+    @State private var showingPaywall = false
+
+    private let entitlements = EntitlementStore.shared
 
     private let columns = [GridItem(.adaptive(minimum: 180), spacing: DesignSystem.Spacing.l)]
 
@@ -38,6 +41,13 @@ struct LibraryHomeView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if !entitlements.isPro {
+                    UpgradeBanner {
+                        showingPaywall = true
+                    }
+                    .padding(.horizontal, DesignSystem.Spacing.l)
+                    .padding(.top, DesignSystem.Spacing.s)
+                }
                 filterChips
                 contentArea
             }
@@ -80,6 +90,9 @@ struct LibraryHomeView: View {
             }
             .sheet(isPresented: $showingFolderManager) {
                 FolderManagerView()
+            }
+            .sheet(isPresented: $showingPaywall) {
+                PaywallView()
             }
             .overlay(alignment: .bottom) {
                 if isProcessingScan {

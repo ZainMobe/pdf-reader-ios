@@ -98,7 +98,11 @@ final class ReaderController {
         guard
             let pdfView,
             let selection = pdfView.currentSelection
-        else { return }
+        else {
+            Haptics.warning()
+            return
+        }
+        Haptics.impact(.light)
 
         let colorChoice = HighlightColor(
             rawValue: UserDefaults.standard.string(forKey: AppSettings.highlightColor) ?? ""
@@ -129,6 +133,7 @@ final class ReaderController {
             let pdfView,
             let page = pdfView.currentPage
         else { return }
+        Haptics.impact(.light)
 
         let pageBounds = page.bounds(for: pdfView.displayBox)
         let noteSize = CGSize(width: 32, height: 32)
@@ -225,6 +230,7 @@ final class ReaderController {
             let pdfView,
             let page = pdfView.document?.page(at: pageIndex)
         else { return }
+        Haptics.impact(.medium)
         let annotation = ImageStampAnnotation(image: image, bounds: bounds)
         page.addAnnotation(annotation)
         scheduleSave()
