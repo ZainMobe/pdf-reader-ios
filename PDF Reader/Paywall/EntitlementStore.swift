@@ -1,12 +1,12 @@
 import Foundation
-import StoreKit
+import RevenueCat
 
-/// Tracks the user's Pro subscription entitlement. Observed by gates around
-/// AI, Edit, Sign, and non-iCloud Sync surfaces.
+/// Tracks the user's Pro entitlement via RevenueCat.
 ///
-/// `refresh()` walks `Transaction.currentEntitlements`; once products are
-/// registered in App Store Connect (see `SubscriptionTier.allIDs`), this
-/// store will pick up live purchases without further changes.
+/// RevenueCat is the single source of truth: `Purchases.shared` handles
+/// StoreKit transactions, syncs entitlements across devices, and pushes
+/// updates through `PurchasesDelegate`. We mirror the active state here so
+/// SwiftUI views can observe it.
 @MainActor
 @Observable
 final class EntitlementStore {
@@ -14,35 +14,38 @@ final class EntitlementStore {
 
     private(set) var isPro: Bool = false
     private(set) var activeProductID: String?
-    private var transactionListener: Task<Void, Never>?
+
+    private let delegate = EntitlementStoreDelegate()
 
     private init() {
-        transactionListener = listenForTransactions()
+        Purchases.shared.delegate = delegate
         Task { await refresh() }
     }
 
+    /// Pulls the latest CustomerInfo from RevenueCat and updates state.
     func refresh() async {
-        var activeID: String?
-        for await result in Transaction.currentEntitlements {
-            guard case .verified(let transaction) = result else { continue }
-            if SubscriptionTier.allIDs.contains(transaction.productID) {
-                activeID = transaction.productID
-                break
-            }
+        do {
+            let info = try await Purchases.shared.customerInfo()
+            apply(customerInfo: info)
+        } catch {
+            // Network blip / not configured yet — keep last known state.
         }
-        self.activeProductID = activeID
-        self.isPro = activeID != nil
     }
 
-    private func listenForTransactions() -> Task<Void, Never> {
-        Task.detached {
-            for await result in Transaction.updates {
-                guard case .verified(let transaction) = result else { continue }
-                await transaction.finish()
-                await MainActor.run {
-                    Task { await EntitlementStore.shared.refresh() }
-                }
-            }
+    fileprivate func apply(customerInfo: CustomerInfo) {
+        let proEntitlement = customerInfo.entitlements[RevenueCatConstants.proEntitlementID]
+        isPro = proEntitlement?.isActive == true
+        activeProductID = proEntitlement?.productIdentifier
+    }
+}
+
+/// Forwards live entitlement updates from RevenueCat to `EntitlementStore`.
+/// Kept separate so EntitlementStore can stay `@MainActor` while the
+/// delegate methods stay non-isolated (RevenueCat calls them off-main).
+final class EntitlementStoreDelegate: NSObject, PurchasesDelegate {
+    func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
+        Task { @MainActor in
+            EntitlementStore.shared.apply(customerInfo: customerInfo)
         }
     }
 }

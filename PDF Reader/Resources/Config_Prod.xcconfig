@@ -1,0 +1,10 @@
+//
+//  Config_Prod.xcconfig
+//  PDF Reader
+//
+//  Release / production build settings.
+//
+
+// RevenueCat production API key. Get it from
+// app.revenuecat.com → Project → Apps & providers → API keys → Apple App Store.
+REVENUECAT_API_KEY = appl_rZWMToMjkvHlpJavCTuDfMOymQx

@@ -1,0 +1,13 @@
+//
+//  Config_Staging.xcconfig
+//  PDF Reader
+//
+//  Debug / staging build settings.
+//
+
+// RevenueCat sandbox API key. Get it from
+// app.revenuecat.com → Project → Apps & providers → API keys → Apple App Store.
+// Use the "public app-specific" key (starts with `appl_`).
+// Safe to commit — RevenueCat client keys are designed to ship in the binary.
+REVENUECAT_API_KEY = test_FRIzWebgAwgUOfsksltCeKwwFMX
+

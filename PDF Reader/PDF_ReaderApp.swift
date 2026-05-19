@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import RevenueCat
 
 @main
 struct PDFAIApp: App {
@@ -7,6 +8,11 @@ struct PDFAIApp: App {
     private let bootError: String?
 
     init() {
+        // Configure RevenueCat first so the EntitlementStore singleton can
+        // query Purchases.shared right after launch. API key is injected
+        // into Info.plist via the active xcconfig (Config_Staging / Config_Prod).
+        Self.configureRevenueCat()
+
         let schema = Schema([
             Document.self,
             Folder.self,
@@ -59,5 +65,25 @@ struct PDFAIApp: App {
                 BootErrorView(message: bootError ?? "Couldn't open the document database.")
             }
         }
+    }
+
+    private static func configureRevenueCat() {
+        guard
+            let apiKey = Bundle.main.object(forInfoDictionaryKey: "REVENUECAT_API_KEY") as? String,
+            !apiKey.isEmpty,
+            !apiKey.contains("REPLACE_WITH")
+        else {
+            // Either the xcconfig isn't bound to this build configuration yet
+            // or the placeholder hasn't been filled in. Paywall + entitlement
+            // checks will just report "not subscribed" until this is fixed.
+            return
+        }
+
+        #if STAGING
+        Purchases.logLevel = .info
+        #else
+        Purchases.logLevel = .warn
+        #endif
+        Purchases.configure(withAPIKey: apiKey)
     }
 }

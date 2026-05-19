@@ -1,13 +1,13 @@
 import SwiftUI
-import StoreKit
+import RevenueCat
 
-/// Subscription paywall surface. Loads `StoreKit.Product`s for the configured
-/// tier IDs on appear; the CTA initiates a purchase and refreshes
-/// `EntitlementStore` on completion.
+/// Subscription paywall. Loads packages from RevenueCat's current offering,
+/// renders live localized prices, runs purchases through RevenueCat, and
+/// dismisses when the Pro entitlement becomes active.
 struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTier: SubscriptionTier = .yearly
-    @State private var products: [Product] = []
+    @State private var packages: [Package] = []
     @State private var isPurchasing = false
     @State private var purchaseError: String?
     @State private var loadAttempted = false
@@ -38,7 +38,7 @@ struct PaywallView: View {
                     Button("Close") { dismiss() }
                 }
             }
-            .task { await loadProducts() }
+            .task { await loadOfferings() }
             .alert(
                 "Purchase failed",
                 isPresented: Binding(
@@ -95,8 +95,8 @@ struct PaywallView: View {
     }
 
     private func tierCard(_ tier: SubscriptionTier) -> some View {
-        let product = products.first { $0.id == tier.id }
-        let priceText = product?.displayPrice ?? tier.priceText
+        let package = packages.first { $0.storeProduct.productIdentifier == tier.id }
+        let priceText = package?.storeProduct.localizedPriceString ?? tier.priceText
         return Button {
             selectedTier = tier
         } label: {
@@ -145,21 +145,21 @@ struct PaywallView: View {
                 .padding(.vertical, DesignSystem.Spacing.s)
             }
             .buttonStyle(.glassProminent)
-            .disabled(isPurchasing || products.first { $0.id == selectedTier.id } == nil)
-            if products.isEmpty {
+            .disabled(isPurchasing || packageFor(selectedTier) == nil)
+            if packages.isEmpty {
                 if loadAttempted {
                     VStack(spacing: DesignSystem.Spacing.xs) {
-                        Text("Couldn't reach the App Store. Check your connection and try again.")
+                        Text("Couldn't load subscriptions. Check your connection and try again.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                         Button("Retry") {
-                            Task { await loadProducts() }
+                            Task { await loadOfferings() }
                         }
                         .font(.caption.weight(.medium))
                     }
                 } else {
-                    Text("Loading products…")
+                    Text("Loading subscriptions…")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
@@ -170,10 +170,7 @@ struct PaywallView: View {
     private var fineprint: some View {
         HStack(spacing: DesignSystem.Spacing.l) {
             Button("Restore Purchases") {
-                Task {
-                    try? await AppStore.sync()
-                    await EntitlementStore.shared.refresh()
-                }
+                Task { await restore() }
             }
             Button("Terms") {}
             Button("Privacy") {}
@@ -182,13 +179,18 @@ struct PaywallView: View {
         .padding(.top, DesignSystem.Spacing.m)
     }
 
-    private func loadProducts() async {
+    private func packageFor(_ tier: SubscriptionTier) -> Package? {
+        packages.first { $0.storeProduct.productIdentifier == tier.id }
+    }
+
+    private func loadOfferings() async {
         do {
-            let fetched = try await Product.products(for: SubscriptionTier.allIDs)
-            products = fetched.sorted { lhs, rhs in
-                let order = [SubscriptionTier.monthly.id, SubscriptionTier.yearly.id, SubscriptionTier.lifetime.id]
-                let lhsIndex = order.firstIndex(of: lhs.id) ?? Int.max
-                let rhsIndex = order.firstIndex(of: rhs.id) ?? Int.max
+            let offerings = try await Purchases.shared.offerings()
+            let current = offerings.current
+            let order = [SubscriptionTier.monthly.id, SubscriptionTier.yearly.id, SubscriptionTier.lifetime.id]
+            packages = (current?.availablePackages ?? []).sorted { lhs, rhs in
+                let lhsIndex = order.firstIndex(of: lhs.storeProduct.productIdentifier) ?? Int.max
+                let rhsIndex = order.firstIndex(of: rhs.storeProduct.productIdentifier) ?? Int.max
                 return lhsIndex < rhsIndex
             }
         } catch {
@@ -198,24 +200,27 @@ struct PaywallView: View {
     }
 
     private func purchase() async {
-        guard let product = products.first(where: { $0.id == selectedTier.id }) else { return }
+        guard let package = packageFor(selectedTier) else { return }
         isPurchasing = true
         defer { isPurchasing = false }
         do {
-            let result = try await product.purchase()
-            switch result {
-            case .success(let verification):
-                if case .verified(let transaction) = verification {
-                    await transaction.finish()
-                    await EntitlementStore.shared.refresh()
-                    dismiss()
-                } else {
-                    purchaseError = "Couldn't verify the purchase."
-                }
-            case .userCancelled, .pending:
-                break
-            @unknown default:
-                break
+            let result = try await Purchases.shared.purchase(package: package)
+            if result.userCancelled { return }
+            await EntitlementStore.shared.refresh()
+            if EntitlementStore.shared.isPro {
+                dismiss()
+            }
+        } catch {
+            purchaseError = error.localizedDescription
+        }
+    }
+
+    private func restore() async {
+        do {
+            _ = try await Purchases.shared.restorePurchases()
+            await EntitlementStore.shared.refresh()
+            if EntitlementStore.shared.isPro {
+                dismiss()
             }
         } catch {
             purchaseError = error.localizedDescription

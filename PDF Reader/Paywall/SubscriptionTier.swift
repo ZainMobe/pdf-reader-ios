@@ -1,8 +1,8 @@
 import Foundation
 
-/// Local model for the subscription tiers the paywall renders. Once products
-/// are registered in App Store Connect, prices will be sourced from
-/// `StoreKit.Product` and these display strings become fallbacks.
+/// Local model for the subscription tiers the paywall renders. Live prices
+/// and entitlement state come from RevenueCat; these display strings are
+/// fallbacks for when offerings haven't loaded yet.
 struct SubscriptionTier: Identifiable, Hashable {
     let id: String
     let displayName: String
@@ -13,7 +13,7 @@ struct SubscriptionTier: Identifiable, Hashable {
 
 extension SubscriptionTier {
     static let monthly = SubscriptionTier(
-        id: "pdfai.pro.monthly",
+        id: "com.wappltd.pdf.pro.monthly",
         displayName: "Monthly",
         priceText: "$4.99",
         billingDescription: "Billed monthly",
@@ -21,7 +21,7 @@ extension SubscriptionTier {
     )
 
     static let yearly = SubscriptionTier(
-        id: "pdfai.pro.yearly",
+        id: "com.wappltd.pdf.pro.yearly",
         displayName: "Annual",
         priceText: "$39.99",
         billingDescription: "Save 33% · Billed yearly",
@@ -29,7 +29,7 @@ extension SubscriptionTier {
     )
 
     static let lifetime = SubscriptionTier(
-        id: "pdfai.pro.lifetime",
+        id: "com.wappltd.pdf.pro.lifetime",
         displayName: "Lifetime",
         priceText: "$99.99",
         billingDescription: "One-time purchase",
@@ -38,4 +38,9 @@ extension SubscriptionTier {
 
     static let all: [SubscriptionTier] = [.monthly, .yearly, .lifetime]
     static let allIDs: Set<String> = Set(all.map(\.id))
+}
+
+/// RevenueCat entitlement that unlocks Pro features.
+enum RevenueCatConstants {
+    static let proEntitlementID = "Pro"
 }
