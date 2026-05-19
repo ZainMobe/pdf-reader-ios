@@ -37,6 +37,9 @@ struct ReaderView: View {
     @State private var showingPaywall = false
     @State private var showingAddText = false
     @State private var newTextContent = ""
+    @State private var showingNotePrompt = false
+    @State private var noteText = ""
+    @State private var showingWatermarkSheet = false
     @State private var pdfReloadToken = UUID()
     @State private var controller = ReaderController()
     @State private var readAloud = ReadAloud()
@@ -197,6 +200,20 @@ struct ReaderView: View {
         } message: {
             Text("Text appears at the center of the current page. Tap and drag to reposition after adding.")
         }
+        .alert("Add Sticky Note", isPresented: $showingNotePrompt) {
+            TextField("Note text", text: $noteText)
+            Button("Cancel", role: .cancel) { noteText = "" }
+            Button("Add") {
+                let text = noteText
+                noteText = ""
+                controller.addStickyNote(text: text)
+            }
+        } message: {
+            Text("Tap the note icon on the page to reveal the text later.")
+        }
+        .sheet(isPresented: $showingWatermarkSheet) {
+            WatermarkView(preselected: document)
+        }
         .task {
             if !didApplyDefaults {
                 displayMode = PDFDisplayMode(rawValue: defaultDisplayModeRaw) ?? .singlePageContinuous
@@ -229,7 +246,8 @@ struct ReaderView: View {
                 Label("Highlight Selection", systemImage: "highlighter")
             }
             Button {
-                controller.addStickyNote()
+                noteText = ""
+                showingNotePrompt = true
             } label: {
                 Label("Sticky Note", systemImage: "note.text.badge.plus")
             }
@@ -254,6 +272,11 @@ struct ReaderView: View {
                 gated { controller.redactSelection() }
             } label: {
                 proItem("Redact Selection", systemImage: "rectangle.fill")
+            }
+            Button {
+                gated { showingWatermarkSheet = true }
+            } label: {
+                proItem("Add Watermark", systemImage: "drop")
             }
             Divider()
             Button {

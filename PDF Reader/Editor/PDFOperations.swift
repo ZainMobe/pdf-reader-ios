@@ -13,6 +13,7 @@ enum PDFOperations {
         case sourceEncrypted
         case invalidPageCount
         case invalidSplitPoint
+        case compressionDidNotShrink
 
         var errorDescription: String? {
             switch self {
@@ -21,6 +22,7 @@ enum PDFOperations {
             case .sourceEncrypted: "The source PDF is encrypted. Open it and enter its password before running this tool."
             case .invalidPageCount: "Page count must be at least 1."
             case .invalidSplitPoint: "Pick a split point inside the document."
+            case .compressionDidNotShrink: "This PDF is already efficiently compressed — most of its size comes from embedded text, so rasterizing pages would make the file larger. Pick a higher quality if you only need to flatten annotations, or skip compression for this file."
             }
         }
     }
@@ -165,9 +167,13 @@ enum PDFOperations {
         return document
     }
 
-    /// Rasterizes each page at the chosen DPI and re-encodes through JPEG
-    /// to drastically reduce file size. Trade-off: selectable text,
-    /// annotations, and form fields are flattened.
+    /// Rasterizes each page at the chosen DPI and embeds it back as a JPEG.
+    /// Uses Core Graphics' PDF context (rather than UIGraphicsPDFRenderer)
+    /// so the embedded image is stored as JPEG bytes inside the PDF content
+    /// stream — UIImage.draw decodes JPEG before drawing, which would
+    /// inflate the output. Also bails with `.compressionDidNotShrink` when
+    /// the result would be larger than the source (typical for text-heavy
+    /// PDFs that already use efficient embedded fonts).
     @discardableResult
     static func compress(
         _ source: Document,
@@ -182,49 +188,68 @@ enum PDFOperations {
         }
         try ensureUnlocked(pdf)
 
-        let bounds = firstPage.bounds(for: .mediaBox)
-        let renderer = UIGraphicsPDFRenderer(bounds: bounds)
-        let totalPages = pdf.pageCount
-        let scale = quality.dpi / 72.0
-
-        let data = renderer.pdfData { ctx in
-            for index in 0..<totalPages {
-                guard let page = pdf.page(at: index) else { continue }
-                let pageBounds = page.bounds(for: .mediaBox)
-                ctx.beginPage(withBounds: pageBounds, pageInfo: [:])
-
-                let imageSize = CGSize(
-                    width: pageBounds.width * scale,
-                    height: pageBounds.height * scale
-                )
-                let imageRenderer = UIGraphicsImageRenderer(size: imageSize)
-                let pageImage = imageRenderer.image { imgCtx in
-                    let cg = imgCtx.cgContext
-                    cg.setFillColor(UIColor.white.cgColor)
-                    cg.fill(CGRect(origin: .zero, size: imageSize))
-                    cg.translateBy(x: 0, y: imageSize.height)
-                    cg.scaleBy(x: scale, y: -scale)
-                    page.draw(with: .mediaBox, to: cg)
-                }
-
-                // Re-encode through JPEG so the embedded image is the
-                // compressed form rather than raw pixels.
-                if let jpegData = pageImage.jpegData(compressionQuality: quality.jpegQuality),
-                   let jpegImage = UIImage(data: jpegData) {
-                    jpegImage.draw(in: pageBounds)
-                } else {
-                    pageImage.draw(in: pageBounds)
-                }
-            }
-        }
-
         let id = UUID()
         let filename = "\(id.uuidString).pdf"
         let url = DocumentStorage.pdfStorageDirectory.appending(path: filename)
-        try data.write(to: url)
+
+        var initialMediaBox = firstPage.bounds(for: .mediaBox)
+        guard let cgContext = CGContext(url as CFURL, mediaBox: &initialMediaBox, nil) else {
+            throw OpError.writeFailed
+        }
+
+        let scale = quality.dpi / 72.0
+        let totalPages = pdf.pageCount
+
+        for index in 0..<totalPages {
+            guard let page = pdf.page(at: index) else { continue }
+            var pageMediaBox = page.bounds(for: .mediaBox)
+            let mediaBoxData = NSData(bytes: &pageMediaBox, length: MemoryLayout<CGRect>.size)
+            let pageInfo: [String: Any] = [
+                kCGPDFContextMediaBox as String: mediaBoxData
+            ]
+            cgContext.beginPDFPage(pageInfo as CFDictionary)
+
+            // Rasterize the page at the chosen DPI.
+            let imageSize = CGSize(
+                width: pageMediaBox.width * scale,
+                height: pageMediaBox.height * scale
+            )
+            let imageRenderer = UIGraphicsImageRenderer(size: imageSize)
+            let pageImage = imageRenderer.image { imgCtx in
+                let cg = imgCtx.cgContext
+                cg.setFillColor(UIColor.white.cgColor)
+                cg.fill(CGRect(origin: .zero, size: imageSize))
+                cg.translateBy(x: 0, y: imageSize.height)
+                cg.scaleBy(x: scale, y: -scale)
+                page.draw(with: .mediaBox, to: cg)
+            }
+
+            // Compress to JPEG, then construct a CGImage backed by the JPEG
+            // bytes directly. Drawing this image into the PDF context stores
+            // the JPEG stream verbatim — no re-decode + re-encode.
+            if let jpegData = pageImage.jpegData(compressionQuality: quality.jpegQuality),
+               let dataProvider = CGDataProvider(data: jpegData as CFData),
+               let jpegCGImage = CGImage(
+                    jpegDataProviderSource: dataProvider,
+                    decode: nil,
+                    shouldInterpolate: true,
+                    intent: .defaultIntent
+               ) {
+                cgContext.draw(jpegCGImage, in: pageMediaBox)
+            }
+
+            cgContext.endPDFPage()
+        }
+        cgContext.closePDF()
 
         let fileSize = (try? FileManager.default
             .attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+
+        // Don't keep a "compressed" copy that's the same size or larger.
+        if fileSize >= source.fileSize {
+            try? FileManager.default.removeItem(at: url)
+            throw OpError.compressionDidNotShrink
+        }
 
         let document = Document(
             id: id,

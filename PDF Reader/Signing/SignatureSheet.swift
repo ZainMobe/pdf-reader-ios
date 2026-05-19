@@ -17,6 +17,7 @@ struct SignatureSheet: View {
     @State private var isCreating = false
     @State private var creationMode: CreationMode = .draw
     @State private var canvasView = PKCanvasView()
+    @State private var drawingIsEmpty = true
     @State private var typedText: String = ""
     @State private var typedFont: String = SignatureSheet.cursiveFonts[0]
     @State private var pickedItem: PhotosPickerItem?
@@ -145,18 +146,24 @@ struct SignatureSheet: View {
             ZStack {
                 RoundedRectangle(cornerRadius: DesignSystem.Radius.medium)
                     .fill(.background.secondary)
-                SignatureCanvasView(canvasView: $canvasView)
-                    .padding(DesignSystem.Spacing.m)
-                if canvasView.drawing.bounds.isEmpty {
+                SignatureCanvasView(canvasView: $canvasView) { drawing in
+                    drawingIsEmpty = drawing.bounds.isEmpty
+                }
+                .padding(DesignSystem.Spacing.m)
+                if drawingIsEmpty {
                     Text("Sign here")
                         .font(.title3)
                         .foregroundStyle(.tertiary)
+                        .allowsHitTesting(false)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 320)
 
             HStack {
-                Button("Clear") { canvasView.drawing = PKDrawing() }
+                Button("Clear") {
+                    canvasView.drawing = PKDrawing()
+                    drawingIsEmpty = true
+                }
                 Spacer()
             }
         }
@@ -234,7 +241,7 @@ struct SignatureSheet: View {
 
     private var canCommit: Bool {
         switch creationMode {
-        case .draw: !canvasView.drawing.bounds.isEmpty
+        case .draw: !drawingIsEmpty
         case .type: !typedText.trimmingCharacters(in: .whitespaces).isEmpty
         case .importPhoto: pickedImage != nil
         }

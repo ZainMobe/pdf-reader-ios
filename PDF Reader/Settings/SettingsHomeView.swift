@@ -43,6 +43,13 @@ struct SettingsHomeView: View {
                         Label("Auto-Fill Profile", systemImage: "person.text.rectangle")
                     }
                 }
+                Section("Signatures") {
+                    NavigationLink {
+                        SignatureManagerView()
+                    } label: {
+                        Label("Manage Signatures", systemImage: "signature")
+                    }
+                }
                 Section("Reading") {
                     Picker("Page Mode", selection: $displayModeRaw) {
                         Text("Single Page").tag(PDFDisplayMode.singlePage.rawValue)

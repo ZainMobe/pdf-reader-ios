@@ -9,6 +9,10 @@ struct WatermarkView: View {
     @Environment(\.dismiss) private var dismiss
     @Query(sort: \Document.addedAt, order: .reverse) private var documents: [Document]
 
+    /// When set, the picker preselects this document and the user only has
+    /// to choose watermark text + opacity. Used when opened from the Reader.
+    var preselected: Document?
+
     @State private var selectedDoc: Document?
     @State private var watermarkText = "CONFIDENTIAL"
     @State private var opacity: Double = 0.2
@@ -81,6 +85,11 @@ struct WatermarkView: View {
                 Button("OK") { error = nil }
             } message: {
                 Text(error ?? "")
+            }
+            .onAppear {
+                if selectedDoc == nil, let pre = preselected {
+                    selectedDoc = pre
+                }
             }
         }
     }

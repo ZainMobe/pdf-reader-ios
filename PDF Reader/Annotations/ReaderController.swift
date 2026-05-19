@@ -122,14 +122,16 @@ final class ReaderController {
     }
 
     /// Drops a sticky-note icon at the center of the currently visible page.
-    func addStickyNote() {
+    /// The note's body text is `contents`; tapping the icon in PDFView shows
+    /// the popup with that text.
+    func addStickyNote(text: String) {
         guard
             let pdfView,
             let page = pdfView.currentPage
         else { return }
 
         let pageBounds = page.bounds(for: pdfView.displayBox)
-        let noteSize = CGSize(width: 24, height: 24)
+        let noteSize = CGSize(width: 32, height: 32)
         let origin = CGPoint(
             x: pageBounds.midX - noteSize.width / 2,
             y: pageBounds.midY - noteSize.height / 2
@@ -139,8 +141,9 @@ final class ReaderController {
             forType: .text,
             withProperties: nil
         )
-        annotation.contents = "Note"
+        annotation.contents = text.isEmpty ? "Note" : text
         annotation.color = .systemYellow
+        annotation.iconType = .note
         page.addAnnotation(annotation)
         scheduleSave()
     }
