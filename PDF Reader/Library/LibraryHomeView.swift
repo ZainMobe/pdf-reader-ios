@@ -43,6 +43,9 @@ struct LibraryHomeView: View {
             }
             .navigationTitle(navTitle)
             .searchable(text: $searchText, prompt: "Search title or contents")
+            .task {
+                await SearchableTextBackfill.runIfNeeded(in: modelContext)
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     folderMenu

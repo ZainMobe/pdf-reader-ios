@@ -66,7 +66,8 @@ enum DocumentStorage {
 
         let fileSize = (try? FileManager.default
             .attributesOfItem(atPath: destinationURL.path)[.size] as? Int64) ?? 0
-        let pageCount = PDFDocument(url: destinationURL)?.pageCount ?? 0
+        let pdfDocument = PDFDocument(url: destinationURL)
+        let pageCount = pdfDocument?.pageCount ?? 0
         let title = sourceURL.deletingPathExtension().lastPathComponent
 
         let document = Document(
@@ -76,7 +77,58 @@ enum DocumentStorage {
             fileSize: fileSize,
             pageCount: pageCount
         )
+
+        // Index the document's embedded text so it's searchable from the
+        // Library on the next pass. Scanned PDFs already populate `ocrText`
+        // via the OCR pipeline; this covers imported PDFs that already
+        // carry their own text layer.
+        if let body = pdfDocument?.string,
+           !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            document.ocrText = body
+        }
+
         context.insert(document)
         return document
+    }
+}
+
+/// One-shot backfill that indexes embedded PDF text for any document whose
+/// `ocrText` is still `nil`. Runs lazily from the Library so older imports
+/// (and documents synced in from other devices) become searchable without a
+/// migration.
+@MainActor
+enum SearchableTextBackfill {
+    private static var didRun = false
+
+    static func runIfNeeded(in context: ModelContext) async {
+        guard !didRun else { return }
+        didRun = true
+
+        let descriptor = FetchDescriptor<Document>(
+            predicate: #Predicate { $0.ocrText == nil }
+        )
+        guard let pending = try? context.fetch(descriptor), !pending.isEmpty else { return }
+
+        for document in pending {
+            if Task.isCancelled { return }
+            let url = document.fileURL
+            let extracted = await Task.detached(priority: .utility) {
+                extractText(at: url)
+            }.value
+            if let extracted {
+                document.ocrText = extracted
+            }
+            await Task.yield()
+        }
+    }
+
+    nonisolated private static func extractText(at url: URL) -> String? {
+        guard
+            let pdf = PDFDocument(url: url),
+            !pdf.isLocked,
+            let body = pdf.string,
+            !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return nil }
+        return body
     }
 }
