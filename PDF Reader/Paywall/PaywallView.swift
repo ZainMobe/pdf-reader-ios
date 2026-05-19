@@ -114,7 +114,7 @@ struct PaywallView: View {
                                 .font(.caption2.weight(.bold))
                                 .padding(.horizontal, DesignSystem.Spacing.s)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(.tint))
+                                .background(Capsule().fill(Color.green))
                                 .foregroundStyle(.white)
                         }
                     }
@@ -125,10 +125,12 @@ struct PaywallView: View {
                             .foregroundStyle(.green)
                     }
                 }
-                Spacer()
+                Spacer(minLength: DesignSystem.Spacing.m)
                 Text(priceText).font(.headline)
             }
             .padding(DesignSystem.Spacing.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
             .glassEffect(
                 selectedTier == tier ? Glass.regular.tint(.accentColor) : .regular,
                 in: .rect(cornerRadius: DesignSystem.Radius.medium)
