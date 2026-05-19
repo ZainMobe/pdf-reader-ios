@@ -97,6 +97,7 @@ struct PaywallView: View {
     }
 
     private func tierCard(_ tier: SubscriptionTier) -> some View {
+        let isSelected = selectedTier == tier
         let package = packageFor(tier)
         let priceText = package?.storeProduct.localizedPriceString ?? tier.priceText
         let trial = trialDescription(for: tier)
@@ -104,8 +105,9 @@ struct PaywallView: View {
             selectedTier = tier
         } label: {
             HStack(spacing: DesignSystem.Spacing.m) {
-                Image(systemName: selectedTier == tier ? "largecircle.fill.circle" : "circle")
-                    .foregroundStyle(.tint)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
                     HStack(spacing: DesignSystem.Spacing.s) {
                         Text(tier.displayName).font(.headline)
@@ -131,9 +133,10 @@ struct PaywallView: View {
             .padding(DesignSystem.Spacing.l)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .glassEffect(
-                selectedTier == tier ? Glass.regular.tint(.accentColor) : .regular,
-                in: .rect(cornerRadius: DesignSystem.Radius.medium)
+            .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+            .overlay(
+                RoundedRectangle(cornerRadius: DesignSystem.Radius.medium)
+                    .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
             )
         }
         .buttonStyle(.plain)
