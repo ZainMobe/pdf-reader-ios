@@ -2,12 +2,14 @@ import SwiftUI
 import RevenueCat
 
 /// Subscription paywall. Loads packages from RevenueCat's current offering,
-/// renders live localized prices, runs purchases through RevenueCat, and
-/// dismisses when the Pro entitlement becomes active.
+/// renders live localized prices, surfaces free-trial offers per package,
+/// runs purchases through RevenueCat, and dismisses when the Pro
+/// entitlement becomes active.
 struct PaywallView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTier: SubscriptionTier = .yearly
     @State private var packages: [Package] = []
+    @State private var eligibility: [String: IntroEligibilityStatus] = [:]
     @State private var isPurchasing = false
     @State private var purchaseError: String?
     @State private var loadAttempted = false
@@ -95,8 +97,9 @@ struct PaywallView: View {
     }
 
     private func tierCard(_ tier: SubscriptionTier) -> some View {
-        let package = packages.first { $0.storeProduct.productIdentifier == tier.id }
+        let package = packageFor(tier)
         let priceText = package?.storeProduct.localizedPriceString ?? tier.priceText
+        let trial = trialDescription(for: tier)
         return Button {
             selectedTier = tier
         } label: {
@@ -116,6 +119,11 @@ struct PaywallView: View {
                         }
                     }
                     Text(tier.billingDescription).font(.caption).foregroundStyle(.secondary)
+                    if let trial {
+                        Label(trial, systemImage: "gift")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
                 }
                 Spacer()
                 Text(priceText).font(.headline)
@@ -138,7 +146,7 @@ struct PaywallView: View {
                     if isPurchasing {
                         ProgressView()
                     } else {
-                        Text("Subscribe")
+                        Text(ctaTitle)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -146,6 +154,10 @@ struct PaywallView: View {
             }
             .buttonStyle(.glassProminent)
             .disabled(isPurchasing || packageFor(selectedTier) == nil)
+            Text(ctaCaption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
             if packages.isEmpty {
                 if loadAttempted {
                     VStack(spacing: DesignSystem.Spacing.xs) {
@@ -179,6 +191,61 @@ struct PaywallView: View {
         .padding(.top, DesignSystem.Spacing.m)
     }
 
+    // MARK: - Trial helpers
+
+    private var ctaTitle: String {
+        trialDescription(for: selectedTier) != nil ? "Start Free Trial" : "Subscribe"
+    }
+
+    private var ctaCaption: String {
+        guard let package = packageFor(selectedTier) else { return "" }
+        let price = package.storeProduct.localizedPriceString
+        if let trial = trialDescription(for: selectedTier) {
+            return "\(trial), then \(price) \(periodSuffix(selectedTier))"
+        }
+        return "\(price) \(periodSuffix(selectedTier))"
+    }
+
+    private func periodSuffix(_ tier: SubscriptionTier) -> String {
+        switch tier.id {
+        case SubscriptionTier.monthly.id: "per month"
+        case SubscriptionTier.yearly.id: "per year"
+        case SubscriptionTier.lifetime.id: "one-time"
+        default: ""
+        }
+    }
+
+    /// Returns a human-readable trial duration string (e.g. "3-day free trial")
+    /// when the tier has an intro free-trial offer and the user is eligible
+    /// for it. Returns nil for tiers without a trial or for users who've
+    /// already used the trial.
+    private func trialDescription(for tier: SubscriptionTier) -> String? {
+        guard
+            let package = packageFor(tier),
+            let intro = package.storeProduct.introductoryDiscount,
+            intro.paymentMode == .freeTrial
+        else { return nil }
+
+        // Hide trial badges for users we know are ineligible. `unknown` and
+        // `noIntroOfferExists` map to "don't show" too. `eligible` shows it.
+        let status = eligibility[package.storeProduct.productIdentifier]
+        guard status == .eligible || status == nil else { return nil }
+
+        return "\(intro.subscriptionPeriod.value)-\(periodUnitName(intro.subscriptionPeriod)) free trial"
+    }
+
+    private func periodUnitName(_ period: SubscriptionPeriod) -> String {
+        let plural = period.value != 1
+        switch period.unit {
+        case .day: return plural ? "days" : "day"
+        case .week: return plural ? "weeks" : "week"
+        case .month: return plural ? "months" : "month"
+        case .year: return plural ? "years" : "year"
+        }
+    }
+
+    // MARK: - RevenueCat
+
     private func packageFor(_ tier: SubscriptionTier) -> Package? {
         packages.first { $0.storeProduct.productIdentifier == tier.id }
     }
@@ -188,10 +255,21 @@ struct PaywallView: View {
             let offerings = try await Purchases.shared.offerings()
             let current = offerings.current
             let order = [SubscriptionTier.monthly.id, SubscriptionTier.yearly.id, SubscriptionTier.lifetime.id]
-            packages = (current?.availablePackages ?? []).sorted { lhs, rhs in
+            let sorted = (current?.availablePackages ?? []).sorted { lhs, rhs in
                 let lhsIndex = order.firstIndex(of: lhs.storeProduct.productIdentifier) ?? Int.max
                 let rhsIndex = order.firstIndex(of: rhs.storeProduct.productIdentifier) ?? Int.max
                 return lhsIndex < rhsIndex
+            }
+            packages = sorted
+
+            // Subscriptions only — lifetime can't have an intro offer.
+            let subscriptionIDs = sorted
+                .map(\.storeProduct.productIdentifier)
+                .filter { $0 != SubscriptionTier.lifetime.id }
+            if !subscriptionIDs.isEmpty {
+                let result = await Purchases.shared
+                    .checkTrialOrIntroDiscountEligibility(productIdentifiers: subscriptionIDs)
+                eligibility = result.mapValues(\.status)
             }
         } catch {
             purchaseError = error.localizedDescription
