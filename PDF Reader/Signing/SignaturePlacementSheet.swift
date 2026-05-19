@@ -3,31 +3,35 @@ import PDFKit
 import UIKit
 
 /// Full-screen placement editor for a signature image. Renders the target
-/// page as a background and lets the user drag the signature around and
-/// pinch to resize before committing it as a `PDFAnnotation` on the page.
+/// page asynchronously as a background and lets the user drag the signature
+/// around, pinch to resize, and rotate with two fingers before stamping it
+/// as a `PDFAnnotation`.
 ///
-/// The host (Reader) receives the final placement as a `CGRect` in PDF
-/// page coordinates (origin at the bottom-left) and stamps the annotation
-/// itself via `ReaderController.placeSignature`.
+/// The host (Reader) receives the final placement as a `CGRect` in PDF page
+/// coordinates plus a rotation in degrees, and stamps the annotation via
+/// `ReaderController.placeSignature`.
 struct SignaturePlacementSheet: View {
     let document: Document
     let pageIndex: Int
     let signatureImage: UIImage
-    let onPlace: (CGRect) -> Void
+    let onPlace: (CGRect, CGFloat) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var pageImage: UIImage?
     @State private var pageSize: CGSize = .zero
+    @State private var didLoadPage = false
 
-    /// Position + size are stored normalized to page width/height so they
-    /// survive geometry changes (e.g. rotation). Y is top-down here for
-    /// easy SwiftUI math; we flip it to PDF-space on commit.
+    /// Position + size + rotation are stored separately from the live gesture
+    /// values so we can commit them on end while still rendering smoothly
+    /// during the drag/pinch/rotate gestures.
     @State private var centerXNorm: CGFloat = 0.5
     @State private var centerYNorm: CGFloat = 0.78
     @State private var widthNorm: CGFloat = 0.33
+    @State private var rotationDegrees: CGFloat = 0
 
     @GestureState private var dragOffset: CGSize = .zero
     @GestureState private var liveMagnification: CGFloat = 1.0
+    @GestureState private var liveRotation: Angle = .zero
 
     private var aspect: CGFloat {
         signatureImage.size.height / max(signatureImage.size.width, 1)
@@ -53,7 +57,12 @@ struct SignaturePlacementSheet: View {
                             .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                         signatureOverlay(in: pageRect)
                     } else {
-                        ProgressView()
+                        VStack(spacing: DesignSystem.Spacing.s) {
+                            ProgressView()
+                            Text("Preparing page…")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
@@ -61,19 +70,23 @@ struct SignaturePlacementSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") {
+                        Haptics.selection()
+                        dismiss()
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Place") { commit() }
                         .buttonStyle(.glassProminent)
+                        .disabled(!didLoadPage)
                 }
                 ToolbarItem(placement: .bottomBar) {
-                    Label("Drag to move · Pinch to resize", systemImage: "hand.draw")
+                    Label("Drag · Pinch · Rotate with two fingers", systemImage: "hand.draw")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .task { renderPage() }
+            .task { await renderPage() }
         }
     }
 
@@ -82,6 +95,36 @@ struct SignaturePlacementSheet: View {
         let liveHeight = liveWidth * aspect
         let centerX = pageRect.minX + pageRect.width * centerXNorm + dragOffset.width
         let centerY = pageRect.minY + pageRect.height * centerYNorm + dragOffset.height
+        let totalRotation = Angle(degrees: rotationDegrees) + liveRotation
+
+        let dragGesture = DragGesture()
+            .updating($dragOffset) { value, state, _ in
+                state = value.translation
+            }
+            .onEnded { value in
+                guard pageRect.width > 0, pageRect.height > 0 else { return }
+                let dx = value.translation.width / pageRect.width
+                let dy = value.translation.height / pageRect.height
+                centerXNorm = clamp(centerXNorm + dx, 0.05, 0.95)
+                centerYNorm = clamp(centerYNorm + dy, 0.05, 0.95)
+            }
+
+        let magnifyGesture = MagnificationGesture()
+            .updating($liveMagnification) { value, state, _ in
+                state = value
+            }
+            .onEnded { value in
+                widthNorm = clamp(widthNorm * value, 0.1, 0.9)
+            }
+
+        let rotateGesture = RotationGesture()
+            .updating($liveRotation) { value, state, _ in
+                state = value
+            }
+            .onEnded { value in
+                rotationDegrees += CGFloat(value.degrees)
+                Haptics.selection()
+            }
 
         return Image(uiImage: signatureImage)
             .resizable()
@@ -91,43 +134,40 @@ struct SignaturePlacementSheet: View {
                 RoundedRectangle(cornerRadius: DesignSystem.Radius.small)
                     .strokeBorder(.tint, lineWidth: 1.5)
             )
+            .rotationEffect(totalRotation)
             .position(x: centerX, y: centerY)
             .gesture(
                 SimultaneousGesture(
-                    DragGesture()
-                        .updating($dragOffset) { value, state, _ in
-                            state = value.translation
-                        }
-                        .onEnded { value in
-                            guard pageRect.width > 0, pageRect.height > 0 else { return }
-                            let dx = value.translation.width / pageRect.width
-                            let dy = value.translation.height / pageRect.height
-                            centerXNorm = clamp(centerXNorm + dx, 0.05, 0.95)
-                            centerYNorm = clamp(centerYNorm + dy, 0.05, 0.95)
-                        },
-                    MagnificationGesture()
-                        .updating($liveMagnification) { value, state, _ in
-                            state = value
-                        }
-                        .onEnded { value in
-                            widthNorm = clamp(widthNorm * value, 0.1, 0.9)
-                        }
+                    SimultaneousGesture(dragGesture, magnifyGesture),
+                    rotateGesture
                 )
             )
     }
 
-    private func renderPage() {
-        guard
-            let pdf = PDFDocument(url: document.fileURL),
-            let page = pdf.page(at: pageIndex)
-        else { return }
-        let bounds = page.bounds(for: .cropBox)
-        pageSize = bounds.size
-        let scale: CGFloat = 2
-        pageImage = page.thumbnail(
-            of: CGSize(width: bounds.width * scale, height: bounds.height * scale),
-            for: .cropBox
-        )
+    /// Loads the PDF and renders the target page on a background priority
+    /// task. Keeps the sheet responsive when the source PDF is large.
+    private func renderPage() async {
+        let url = document.fileURL
+        let idx = pageIndex
+        let result: (CGSize, UIImage?)? = await Task.detached(priority: .userInitiated) {
+            guard
+                let pdf = PDFDocument(url: url),
+                let page = pdf.page(at: idx)
+            else { return nil }
+            let bounds = page.bounds(for: .cropBox)
+            let scale: CGFloat = 2
+            let image = page.thumbnail(
+                of: CGSize(width: bounds.width * scale, height: bounds.height * scale),
+                for: .cropBox
+            )
+            return (bounds.size, image)
+        }.value
+
+        if let result {
+            pageSize = result.0
+            pageImage = result.1
+            didLoadPage = true
+        }
     }
 
     private func commit() {
@@ -142,7 +182,7 @@ struct SignaturePlacementSheet: View {
         let sigWidth = bounds.width * widthNorm
         let sigHeight = sigWidth * aspect
 
-        // Our normalized Y is top-down; PDF page space is bottom-up.
+        // Normalized Y is top-down; PDF page space is bottom-up.
         let centerX = bounds.width * centerXNorm
         let centerYFromTop = bounds.height * centerYNorm
         let centerYFromBottom = bounds.height - centerYFromTop
@@ -153,7 +193,8 @@ struct SignaturePlacementSheet: View {
             width: sigWidth,
             height: sigHeight
         )
-        onPlace(placedBounds)
+        Haptics.impact(.medium)
+        onPlace(placedBounds, rotationDegrees)
         dismiss()
     }
 

@@ -188,10 +188,11 @@ struct ReaderView: View {
                     document: document,
                     pageIndex: pendingSignaturePageIndex,
                     signatureImage: image
-                ) { bounds in
+                ) { bounds, rotation in
                     controller.placeSignature(
                         image,
                         bounds: bounds,
+                        rotationDegrees: rotation,
                         onPageAt: pendingSignaturePageIndex
                     )
                     document.isSigned = true

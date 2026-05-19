@@ -225,13 +225,22 @@ final class ReaderController {
     /// Places a signature image on a specific page using the supplied bounds
     /// in PDF page coordinates. The caller (typically `SignaturePlacementSheet`)
     /// computes the bounds based on the user's drag/resize gesture.
-    func placeSignature(_ image: UIImage, bounds: CGRect, onPageAt pageIndex: Int) {
+    func placeSignature(
+        _ image: UIImage,
+        bounds: CGRect,
+        rotationDegrees: CGFloat,
+        onPageAt pageIndex: Int
+    ) {
         guard
             let pdfView,
             let page = pdfView.document?.page(at: pageIndex)
         else { return }
         Haptics.impact(.medium)
-        let annotation = ImageStampAnnotation(image: image, bounds: bounds)
+        let annotation = ImageStampAnnotation(
+            image: image,
+            bounds: bounds,
+            rotationDegrees: rotationDegrees
+        )
         page.addAnnotation(annotation)
         scheduleSave()
 
