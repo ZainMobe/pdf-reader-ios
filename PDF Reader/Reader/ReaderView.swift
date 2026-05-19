@@ -209,6 +209,7 @@ struct ReaderView: View {
         }
         .onDisappear {
             controller.flushSave()
+            controller.disconnect()
         }
         .onChange(of: scenePhase) { _, newPhase in
             // Flush pending annotation saves before the app suspends. Without

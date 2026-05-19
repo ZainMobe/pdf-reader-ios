@@ -8,17 +8,38 @@ import UIKit
 /// directly.
 ///
 /// Saves are debounced — annotation changes accumulate for a second before
-/// the document is written back to disk.
+/// the document is written back to disk. All writes go through
+/// `NSFileCoordinator`, and the controller registers an `NSFilePresenter`
+/// so concurrent edits in other windows automatically refresh this view.
 @MainActor
 @Observable
 final class ReaderController {
     private(set) weak var pdfView: PDFView?
     private(set) var documentURL: URL?
     private var saveTask: Task<Void, Never>?
+    private var presenter: PDFFilePresenter?
 
     func attach(pdfView: PDFView, documentURL: URL) {
         self.pdfView = pdfView
-        self.documentURL = documentURL
+        if self.documentURL != documentURL {
+            disconnect()
+            self.documentURL = documentURL
+            let presenter = PDFFilePresenter(url: documentURL) { [weak self] in
+                Task { @MainActor in
+                    self?.reloadFromExternalChange()
+                }
+            }
+            self.presenter = presenter
+            NSFileCoordinator.addFilePresenter(presenter)
+        }
+    }
+
+    /// Releases the registered file presenter. Call from `onDisappear`.
+    func disconnect() {
+        if let presenter {
+            NSFileCoordinator.removeFilePresenter(presenter)
+        }
+        presenter = nil
     }
 
     /// Page index of the currently displayed page, or `nil` if nothing's loaded.
@@ -71,8 +92,8 @@ final class ReaderController {
 
     // MARK: - Markup (free)
 
-    /// Adds a yellow highlight over the current text selection, one annotation
-    /// per visual line so wrapped text renders cleanly.
+    /// Adds a highlight over the current text selection using the user's
+    /// configured `HighlightColor`, one annotation per visual line.
     func highlightSelection() {
         guard
             let pdfView,
@@ -237,12 +258,50 @@ final class ReaderController {
         }
     }
 
+    /// Writes the document via `NSFileCoordinator` so concurrent saves from
+    /// other windows on the same file are serialized. The presenter we own
+    /// is passed in so we don't fire `presentedItemDidChange` on ourselves.
     private func saveNow() {
         guard
             let pdfView,
             let document = pdfView.document,
             let url = documentURL
         else { return }
-        document.write(to: url)
+
+        let coordinator = NSFileCoordinator(filePresenter: presenter)
+        var coordinationError: NSError?
+        coordinator.coordinate(
+            writingItemAt: url,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { coordinatedURL in
+            document.write(to: coordinatedURL)
+        }
+    }
+
+    /// Called by our `PDFFilePresenter` when another writer modifies the file.
+    /// Reloads the underlying `PDFView` so the user sees the latest version.
+    private func reloadFromExternalChange() {
+        guard let pdfView, let url = documentURL else { return }
+        pdfView.document = PDFDocument(url: url)
+    }
+}
+
+/// Lightweight `NSFilePresenter` that just forwards `presentedItemDidChange`
+/// to a closure. Lets `ReaderController` stay `@MainActor` while still being
+/// a participant in file coordination.
+final class PDFFilePresenter: NSObject, NSFilePresenter, @unchecked Sendable {
+    var presentedItemURL: URL?
+    let presentedItemOperationQueue: OperationQueue = .main
+    private let onChange: @Sendable () -> Void
+
+    init(url: URL, onChange: @escaping @Sendable () -> Void) {
+        self.presentedItemURL = url
+        self.onChange = onChange
+        super.init()
+    }
+
+    func presentedItemDidChange() {
+        onChange()
     }
 }

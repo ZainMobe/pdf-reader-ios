@@ -61,6 +61,21 @@ final class PageEditor {
 
     func save() throws {
         guard document.pageCount > 0 else { throw EditError.noPages }
-        guard document.write(to: originalURL) else { throw EditError.writeFailed }
+
+        // Coordinate the write so any open Reader windows on this URL
+        // pick up the change (via their NSFilePresenter) without racing
+        // with a debounced annotation save.
+        let coordinator = NSFileCoordinator()
+        var success = false
+        var coordinationError: NSError?
+        coordinator.coordinate(
+            writingItemAt: originalURL,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { coordinatedURL in
+            success = document.write(to: coordinatedURL)
+        }
+
+        guard success else { throw EditError.writeFailed }
     }
 }

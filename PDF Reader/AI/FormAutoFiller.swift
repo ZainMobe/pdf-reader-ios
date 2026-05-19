@@ -151,7 +151,21 @@ final class FormAutoFiller {
             }
         }
 
-        guard pdf.write(to: documentURL) else {
+        // Coordinate the write so a Reader window currently showing this
+        // document refreshes via its NSFilePresenter and any concurrent
+        // annotation save can't clobber the filled fields.
+        let coordinator = NSFileCoordinator()
+        var success = false
+        var coordinationError: NSError?
+        coordinator.coordinate(
+            writingItemAt: documentURL,
+            options: .forReplacing,
+            error: &coordinationError
+        ) { coordinatedURL in
+            success = pdf.write(to: coordinatedURL)
+        }
+
+        guard success else {
             state = .failed("Couldn't save changes.")
             return
         }
