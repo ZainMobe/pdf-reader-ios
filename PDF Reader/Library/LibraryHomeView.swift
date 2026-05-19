@@ -504,21 +504,19 @@ private struct DocumentCard: View {
     var body: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.s) {
-                RoundedRectangle(cornerRadius: DesignSystem.Radius.small)
-                    .fill(.tertiary)
-                    .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                    .overlay {
-                        Image(systemName: "doc.text")
-                            .font(.largeTitle)
-                            .foregroundStyle(.secondary)
+                DocumentThumbnailView(
+                    documentID: document.id,
+                    documentURL: document.fileURL,
+                    placeholderIconSize: 32
+                )
+                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                .overlay(alignment: .topTrailing) {
+                    if document.isFavorite {
+                        Image(systemName: "star.fill")
+                            .foregroundStyle(.yellow)
+                            .padding(DesignSystem.Spacing.xs)
                     }
-                    .overlay(alignment: .topTrailing) {
-                        if document.isFavorite {
-                            Image(systemName: "star.fill")
-                                .foregroundStyle(.yellow)
-                                .padding(DesignSystem.Spacing.xs)
-                        }
-                    }
+                }
                 Text(document.title)
                     .font(.headline)
                     .lineLimit(2)
@@ -550,13 +548,12 @@ private struct DocumentListRow: View {
 
     var body: some View {
         HStack(spacing: DesignSystem.Spacing.m) {
-            RoundedRectangle(cornerRadius: DesignSystem.Radius.small)
-                .fill(.tertiary)
-                .frame(width: 44, height: 56)
-                .overlay {
-                    Image(systemName: "doc.text")
-                        .foregroundStyle(.secondary)
-                }
+            DocumentThumbnailView(
+                documentID: document.id,
+                documentURL: document.fileURL,
+                placeholderIconSize: 16
+            )
+            .frame(width: 44, height: 56)
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
                 HStack(spacing: DesignSystem.Spacing.xs) {
                     Text(document.title)
