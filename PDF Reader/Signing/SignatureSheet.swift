@@ -13,6 +13,11 @@ struct SignatureSheet: View {
     @Query(sort: \SignatureAsset.createdAt, order: .reverse) private var signatures: [SignatureAsset]
 
     let onSelect: (UIImage) -> Void
+    /// When true, the sheet skips the saved-signature list and opens
+    /// straight to the creation surface. Used from the Signature Manager
+    /// where the user is already looking at saved signatures and the
+    /// `+` button is unambiguously "make a new one".
+    var forceCreation: Bool = false
 
     @State private var isCreating = false
     @State private var creationMode: CreationMode = .draw
@@ -46,7 +51,7 @@ struct SignatureSheet: View {
     var body: some View {
         NavigationStack {
             Group {
-                if isCreating || signatures.isEmpty {
+                if showingCreation {
                     creationSurface
                 } else {
                     savedList
@@ -56,8 +61,8 @@ struct SignatureSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(isCreating && !signatures.isEmpty ? "Back" : "Cancel") {
-                        if isCreating && !signatures.isEmpty {
+                    Button(canGoBack ? "Back" : "Cancel") {
+                        if canGoBack {
                             isCreating = false
                         } else {
                             dismiss()
@@ -65,7 +70,7 @@ struct SignatureSheet: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if isCreating || signatures.isEmpty {
+                    if showingCreation {
                         Button("Save & Place") { saveAndPlace() }
                             .buttonStyle(.glassProminent)
                             .disabled(!canCommit)
@@ -82,9 +87,23 @@ struct SignatureSheet: View {
     }
 
     private var navigationTitle: String {
-        if isCreating || signatures.isEmpty { return "New Signature" }
+        if showingCreation { return "New Signature" }
         return "Sign Document"
     }
+
+    /// Show the creation form when we've been forced into it, when the user
+    /// tapped "+ New", or when there are no saved signatures yet.
+    private var showingCreation: Bool {
+        forceCreation || isCreating || signatures.isEmpty
+    }
+
+    /// Only offer "Back" when there's a saved list to fall back to.
+    private var canGoBack: Bool {
+        isCreating && !signatures.isEmpty && !forceCreation
+    }
+
+    /// Initial creation flag respects the forceCreation flag.
+    private var initialIsCreating: Bool { forceCreation }
 
     // MARK: - Saved list
 

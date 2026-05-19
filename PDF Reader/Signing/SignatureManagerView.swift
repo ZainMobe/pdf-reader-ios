@@ -62,9 +62,10 @@ struct SignatureManagerView: View {
             }
         }
         .sheet(isPresented: $showingNewSheet) {
-            // SignatureSheet already persists the new SignatureAsset on save;
-            // we don't need the returned image since we're managing the library.
-            SignatureSheet { _ in }
+            // forceCreation skips the saved-list view — the user is already
+            // looking at saved signatures on this screen, so "+" should
+            // land directly on the creation form.
+            SignatureSheet(onSelect: { _ in }, forceCreation: true)
         }
         .alert(
             "Rename Signature",

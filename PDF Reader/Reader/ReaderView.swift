@@ -29,6 +29,9 @@ struct ReaderView: View {
     @State private var showingPasswordSheet = false
     @State private var passwordError: String?
     @State private var showingSignatureSheet = false
+    @State private var showingSignaturePlacement = false
+    @State private var pendingSignatureImage: UIImage?
+    @State private var pendingSignaturePageIndex: Int = 0
     @State private var showingPageEditor = false
     @State private var showingInkSheet = false
     @State private var inkPageIndex: Int = 0
@@ -161,10 +164,38 @@ struct ReaderView: View {
                 attemptUnlock(with: password)
             }
         }
-        .sheet(isPresented: $showingSignatureSheet) {
+        .sheet(
+            isPresented: $showingSignatureSheet,
+            onDismiss: {
+                // If the picker handed back an image, chain into the
+                // placement sheet so the user can drag/resize before stamping.
+                if pendingSignatureImage != nil {
+                    showingSignaturePlacement = true
+                }
+            }
+        ) {
             SignatureSheet { image in
-                controller.placeSignature(image)
-                document.isSigned = true
+                pendingSignatureImage = image
+                pendingSignaturePageIndex = controller.currentPageIndex ?? 0
+            }
+        }
+        .sheet(
+            isPresented: $showingSignaturePlacement,
+            onDismiss: { pendingSignatureImage = nil }
+        ) {
+            if let image = pendingSignatureImage {
+                SignaturePlacementSheet(
+                    document: document,
+                    pageIndex: pendingSignaturePageIndex,
+                    signatureImage: image
+                ) { bounds in
+                    controller.placeSignature(
+                        image,
+                        bounds: bounds,
+                        onPageAt: pendingSignaturePageIndex
+                    )
+                    document.isSigned = true
+                }
             }
         }
         .sheet(isPresented: $showingPageEditor) {

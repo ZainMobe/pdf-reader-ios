@@ -217,30 +217,21 @@ final class ReaderController {
 
     // MARK: - Signing (Pro)
 
-    /// Places a signature image at the bottom-right of the visible page,
-    /// sized to roughly 1/3 of the page width while preserving aspect ratio.
-    func placeSignature(_ image: UIImage) {
+    /// Places a signature image on a specific page using the supplied bounds
+    /// in PDF page coordinates. The caller (typically `SignaturePlacementSheet`)
+    /// computes the bounds based on the user's drag/resize gesture.
+    func placeSignature(_ image: UIImage, bounds: CGRect, onPageAt pageIndex: Int) {
         guard
             let pdfView,
-            let page = pdfView.currentPage
+            let page = pdfView.document?.page(at: pageIndex)
         else { return }
-
-        let pageBounds = page.bounds(for: pdfView.displayBox)
-        let targetWidth = pageBounds.width / 3
-        let aspect = image.size.height / max(image.size.width, 1)
-        let targetHeight = targetWidth * aspect
-
-        let padding: CGFloat = 24
-        let bounds = CGRect(
-            x: pageBounds.maxX - targetWidth - padding,
-            y: pageBounds.minY + padding,
-            width: targetWidth,
-            height: targetHeight
-        )
-
         let annotation = ImageStampAnnotation(image: image, bounds: bounds)
         page.addAnnotation(annotation)
         scheduleSave()
+
+        // Snap the reader to the page that just got a signature so the
+        // user sees the result immediately.
+        pdfView.go(to: page)
     }
 
     // MARK: - Save
