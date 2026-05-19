@@ -57,12 +57,15 @@ struct SignaturePlacementSheet: View {
                             .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                         signatureOverlay(in: pageRect)
                     } else {
-                        VStack(spacing: DesignSystem.Spacing.s) {
+                        VStack(spacing: DesignSystem.Spacing.m) {
                             ProgressView()
+                                .controlSize(.large)
                             Text("Preparing page…")
-                                .font(.caption)
+                                .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
+                        .padding(DesignSystem.Spacing.xl)
+                        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
                     }
                 }
             }
@@ -145,7 +148,10 @@ struct SignaturePlacementSheet: View {
     }
 
     /// Loads the PDF and renders the target page on a background priority
-    /// task. Keeps the sheet responsive when the source PDF is large.
+    /// task. The placement preview only needs to be readable, not crisp —
+    /// the actual signature is rendered at vector quality on commit — so
+    /// we render at native 72 DPI (scale 1.0). At scale 2 on a large PDF
+    /// this could take 5-8 seconds and froze the sheet in a "blank" state.
     private func renderPage() async {
         let url = document.fileURL
         let idx = pageIndex
@@ -155,11 +161,7 @@ struct SignaturePlacementSheet: View {
                 let page = pdf.page(at: idx)
             else { return nil }
             let bounds = page.bounds(for: .cropBox)
-            let scale: CGFloat = 2
-            let image = page.thumbnail(
-                of: CGSize(width: bounds.width * scale, height: bounds.height * scale),
-                for: .cropBox
-            )
+            let image = page.thumbnail(of: bounds.size, for: .cropBox)
             return (bounds.size, image)
         }.value
 
