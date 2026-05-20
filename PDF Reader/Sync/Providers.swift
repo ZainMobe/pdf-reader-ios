@@ -35,8 +35,5 @@ struct OneDriveProvider: CloudStorageProvider {
 enum AvailableProviders {
     static let all: [any CloudStorageProvider] = [
         ICloudProvider(),
-        DropboxProvider(),
-        GoogleDriveProvider(),
-        OneDriveProvider(),
     ]
 }

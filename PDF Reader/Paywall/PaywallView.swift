@@ -208,8 +208,8 @@ struct PaywallView: View {
             Button("Restore Purchases") {
                 Task { await restore() }
             }
-            Button("Terms") {}
-            Button("Privacy") {}
+            Link("Terms", destination: URL(string: "https://propdfeditor.online/terms.html")!)
+            Link("Privacy", destination: URL(string: "https://propdfeditor.online/privacy.html")!)
         }
         .font(.footnote)
         .padding(.top, DesignSystem.Spacing.m)

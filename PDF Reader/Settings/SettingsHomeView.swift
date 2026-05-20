@@ -88,6 +88,14 @@ struct SettingsHomeView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                Section("Legal") {
+                    Link(destination: URL(string: "https://propdfeditor.online/terms.html")!) {
+                        Label("Terms of Service", systemImage: "doc.text")
+                    }
+                    Link(destination: URL(string: "https://propdfeditor.online/privacy.html")!) {
+                        Label("Privacy Policy", systemImage: "lock.shield")
+                    }
+                }
                 Section("About") {
                     LabeledContent("Version", value: "1.0.0 (1)")
                 }

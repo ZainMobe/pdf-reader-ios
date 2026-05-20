@@ -22,12 +22,8 @@ struct SyncStatusView: View {
                 }
             }
 
-            if auth.isConfigured {
-                dropboxSection
-            }
-
             Section {
-                Text("To open files from any installed cloud provider — including iCloud Drive, Dropbox, Google Drive, OneDrive, and Box — use **Library → Add → Import PDF**.")
+                Text("To open files from any installed cloud provider, use **Library → Add → Import PDF**.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
