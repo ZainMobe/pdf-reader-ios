@@ -14,6 +14,8 @@ import UIKit
 struct RootView: View {
     @Environment(\.modelContext) private var modelContext
 
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
+
     @State private var selection: Destination = .library
     @State private var previousSelection: Destination = .library
     @State private var showingImporter = false
@@ -93,6 +95,14 @@ struct RootView: View {
             Button("OK") { importError = nil }
         } message: {
             Text(importError ?? "")
+        }
+        .fullScreenCover(isPresented: Binding(
+            get: { !hasSeenOnboarding },
+            set: { if $0 == false { hasSeenOnboarding = true } }
+        )) {
+            OnboardingView {
+                hasSeenOnboarding = true
+            }
         }
     }
 
