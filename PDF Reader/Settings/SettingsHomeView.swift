@@ -1,9 +1,11 @@
 import SwiftUI
 import PDFKit
+import StoreKit
 
 /// SettingsHomeView — App preferences, subscription status, sync, and about.
 struct SettingsHomeView: View {
     @State private var showingPaywall = false
+    @State private var showingManageSubscription = false
     private let entitlements = EntitlementStore.shared
 
     @AppStorage(AppSettings.defaultDisplayMode)
@@ -20,13 +22,18 @@ struct SettingsHomeView: View {
             Form {
                 Section("Subscription") {
                     LabeledContent("Plan", value: entitlements.isPro ? "Pro" : "Free")
-                    Button {
-                        showingPaywall = true
-                    } label: {
-                        Label(
-                            entitlements.isPro ? "Manage Subscription" : "Upgrade to Pro",
-                            systemImage: "sparkles"
-                        )
+                    if entitlements.isPro {
+                        Button {
+                            showingManageSubscription = true
+                        } label: {
+                            Label("Manage Subscription", systemImage: "creditcard")
+                        }
+                    } else {
+                        Button {
+                            showingPaywall = true
+                        } label: {
+                            Label("Upgrade to Pro", systemImage: "sparkles")
+                        }
                     }
                 }
                 Section("Sync") {
@@ -89,6 +96,7 @@ struct SettingsHomeView: View {
             .sheet(isPresented: $showingPaywall) {
                 PaywallView()
             }
+            .manageSubscriptionsSheet(isPresented: $showingManageSubscription)
         }
     }
 }
