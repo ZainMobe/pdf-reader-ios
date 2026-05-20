@@ -13,6 +13,7 @@ import PDFKit
 /// navigation gesture.
 struct PDFKitView: UIViewRepresentable {
     let url: URL
+    let documentID: UUID
     @Binding var displayMode: PDFDisplayMode
     @Binding var displayDirection: PDFDisplayDirection
     var controller: ReaderController? = nil
@@ -25,7 +26,7 @@ struct PDFKitView: UIViewRepresentable {
         view.displayMode = displayMode
         view.displayDirection = displayDirection
         applyPageViewController(to: view)
-        controller?.attach(pdfView: view, documentURL: url)
+        controller?.attach(pdfView: view, documentURL: url, documentID: documentID)
         return view
     }
 
@@ -44,7 +45,7 @@ struct PDFKitView: UIViewRepresentable {
         if modeChanged || directionChanged {
             applyPageViewController(to: view)
         }
-        controller?.attach(pdfView: view, documentURL: url)
+        controller?.attach(pdfView: view, documentURL: url, documentID: documentID)
     }
 
     /// Enables `usePageViewController` only for `.singlePage`. Other display

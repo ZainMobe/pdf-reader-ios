@@ -65,6 +65,7 @@ struct ReaderView: View {
             } else {
                 PDFKitView(
                     url: document.fileURL,
+                    documentID: document.id,
                     displayMode: $displayMode,
                     displayDirection: $displayDirection,
                     controller: controller

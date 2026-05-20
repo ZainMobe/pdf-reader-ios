@@ -16,11 +16,13 @@ import UIKit
 final class ReaderController {
     private(set) weak var pdfView: PDFView?
     private(set) var documentURL: URL?
+    private(set) var documentID: UUID?
     private var saveTask: Task<Void, Never>?
     private var presenter: PDFFilePresenter?
 
-    func attach(pdfView: PDFView, documentURL: URL) {
+    func attach(pdfView: PDFView, documentURL: URL, documentID: UUID) {
         self.pdfView = pdfView
+        self.documentID = documentID
         if self.documentURL != documentURL {
             disconnect()
             self.documentURL = documentURL
@@ -286,6 +288,13 @@ final class ReaderController {
             error: &coordinationError
         ) { coordinatedURL in
             document.write(to: coordinatedURL)
+        }
+
+        // The first page may now look different (signature, ink, highlight,
+        // redaction, etc.), so drop the cached library thumbnail. Next time
+        // DocumentThumbnailView's task runs it will regenerate from disk.
+        if let documentID {
+            ThumbnailCache.shared.invalidate(documentID)
         }
     }
 

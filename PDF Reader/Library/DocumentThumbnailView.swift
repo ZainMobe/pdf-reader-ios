@@ -5,15 +5,18 @@ import UIKit
 /// Renders a thumbnail of a document's first page, falling back to a
 /// placeholder while it loads. Backed by an in-memory `NSCache` keyed by
 /// document ID so the same image is reused across the grid + list views
-/// and across re-renders during scroll.
+/// and across re-renders during scroll. Re-fetches when the cache reports
+/// an invalidation for this document (e.g. after a save in the Reader).
 struct DocumentThumbnailView: View {
     let documentID: UUID
     let documentURL: URL
     var placeholderIconSize: CGFloat = 32
 
     @State private var image: UIImage?
+    private let cache = ThumbnailCache.shared
 
     var body: some View {
+        let version = cache.version(for: documentID)
         Group {
             if let image {
                 Image(uiImage: image)
@@ -31,7 +34,7 @@ struct DocumentThumbnailView: View {
                     }
             }
         }
-        .task(id: documentID) {
+        .task(id: ThumbnailTaskKey(id: documentID, version: version)) {
             await loadThumbnail()
         }
     }
@@ -52,6 +55,11 @@ struct DocumentThumbnailView: View {
     }
 }
 
+private struct ThumbnailTaskKey: Hashable {
+    let id: UUID
+    let version: Int
+}
+
 /// Generates a first-page PDF thumbnail at a chosen size via PDFKit.
 enum ThumbnailGenerator {
     static func thumbnail(at url: URL, size: CGSize) -> UIImage? {
@@ -66,13 +74,17 @@ enum ThumbnailGenerator {
 
 /// Process-wide in-memory cache so the same first-page thumbnail isn't
 /// rendered repeatedly as the user scrolls the grid or toggles list/grid.
+/// `@Observable` so SwiftUI views that read `version(for:)` automatically
+/// re-render (and re-run their `.task`) when a thumbnail is invalidated.
+@Observable
 final class ThumbnailCache: @unchecked Sendable {
-    static let shared = ThumbnailCache()
+    @MainActor static let shared = ThumbnailCache()
     /// Size requested from PDFKit. The card and list row downscale this as
     /// needed via `scaledToFit()`.
     static let targetSize = CGSize(width: 240, height: 320)
 
     private let cache = NSCache<NSUUID, UIImage>()
+    private var versions: [UUID: Int] = [:]
 
     private init() {
         cache.countLimit = 256
@@ -86,7 +98,14 @@ final class ThumbnailCache: @unchecked Sendable {
         cache.setObject(image, forKey: id as NSUUID)
     }
 
+    /// Bumps every time `invalidate(_:)` is called for this document. Views
+    /// that read it become subscribed and will re-render on the next bump.
+    func version(for id: UUID) -> Int {
+        versions[id, default: 0]
+    }
+
     func invalidate(_ id: UUID) {
         cache.removeObject(forKey: id as NSUUID)
+        versions[id, default: 0] += 1
     }
 }
