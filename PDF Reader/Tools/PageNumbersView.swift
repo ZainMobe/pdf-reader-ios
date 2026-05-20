@@ -10,10 +10,31 @@ struct PageNumbersView: View {
 
     @State private var selectedDoc: Document?
     @State private var error: String?
+    @State private var success: ToolSuccessResult?
 
     var body: some View {
         NavigationStack {
-            Form {
+            Group {
+                if let success {
+                    ToolSuccessView(result: success) { dismiss() }
+                } else {
+                    formContent
+                }
+            }
+            .navigationTitle(success == nil ? "Add Page Numbers" : "Done")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if success != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private var formContent: some View {
+        Form {
                 Section("Apply to") {
                     if documents.isEmpty {
                         Text("No documents in your library yet.")
@@ -45,8 +66,6 @@ struct PageNumbersView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Add Page Numbers")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -68,14 +87,17 @@ struct PageNumbersView: View {
             } message: {
                 Text(error ?? "")
             }
-        }
     }
 
     private func apply() {
         guard let doc = selectedDoc else { return }
         do {
-            try PDFOperations.addPageNumbers(doc, in: modelContext)
-            dismiss()
+            let numbered = try PDFOperations.addPageNumbers(doc, in: modelContext)
+            success = ToolSuccessResult(
+                title: "Page Numbers Added",
+                summary: "Numbered all \(numbered.pageCount) \(numbered.pageCount == 1 ? "page" : "pages")",
+                documents: [numbered]
+            )
         } catch {
             self.error = error.localizedDescription
         }

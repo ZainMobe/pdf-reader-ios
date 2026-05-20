@@ -17,10 +17,31 @@ struct WatermarkView: View {
     @State private var watermarkText = "CONFIDENTIAL"
     @State private var opacity: Double = 0.2
     @State private var error: String?
+    @State private var success: ToolSuccessResult?
 
     var body: some View {
         NavigationStack {
-            Form {
+            Group {
+                if let success {
+                    ToolSuccessView(result: success) { dismiss() }
+                } else {
+                    formContent
+                }
+            }
+            .navigationTitle(success == nil ? "Add Watermark" : "Done")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if success != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private var formContent: some View {
+        Form {
                 Section("Watermark") {
                     TextField("Text", text: $watermarkText)
                         .textInputAutocapitalization(.characters)
@@ -63,8 +84,6 @@ struct WatermarkView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Add Watermark")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -91,7 +110,6 @@ struct WatermarkView: View {
                     selectedDoc = pre
                 }
             }
-        }
     }
 
     private var canApply: Bool {
@@ -101,14 +119,19 @@ struct WatermarkView: View {
 
     private func apply() {
         guard let doc = selectedDoc else { return }
+        let trimmed = watermarkText.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            try PDFOperations.watermark(
+            let stamped = try PDFOperations.watermark(
                 doc,
-                text: watermarkText.trimmingCharacters(in: .whitespacesAndNewlines),
+                text: trimmed,
                 opacity: opacity,
                 in: modelContext
             )
-            dismiss()
+            success = ToolSuccessResult(
+                title: "Watermark Added",
+                summary: "Stamped \(stamped.pageCount) \(stamped.pageCount == 1 ? "page" : "pages") with \u{201C}\(trimmed)\u{201D}",
+                documents: [stamped]
+            )
         } catch {
             self.error = error.localizedDescription
         }

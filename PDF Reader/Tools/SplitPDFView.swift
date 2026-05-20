@@ -10,6 +10,7 @@ struct SplitPDFView: View {
     @State private var selectedDoc: Document?
     @State private var splitAfter = 1
     @State private var error: String?
+    @State private var success: ToolSuccessResult?
 
     private var splittable: [Document] {
         documents.filter { $0.pageCount > 1 }
@@ -17,7 +18,27 @@ struct SplitPDFView: View {
 
     var body: some View {
         NavigationStack {
-            List {
+            Group {
+                if let success {
+                    ToolSuccessView(result: success) { dismiss() }
+                } else {
+                    formContent
+                }
+            }
+            .navigationTitle(success == nil ? "Split PDF" : "Done")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if success != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private var formContent: some View {
+        List {
                 Section("Choose document") {
                     if splittable.isEmpty {
                         Text("No multi-page documents in your library yet.")
@@ -59,8 +80,6 @@ struct SplitPDFView: View {
                     }
                 }
             }
-            .navigationTitle("Split PDF")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -82,14 +101,17 @@ struct SplitPDFView: View {
             } message: {
                 Text(error ?? "")
             }
-        }
     }
 
     private func split() {
         guard let doc = selectedDoc else { return }
         do {
-            _ = try PDFOperations.split(doc, atPage: splitAfter, in: modelContext)
-            dismiss()
+            let parts = try PDFOperations.split(doc, atPage: splitAfter, in: modelContext)
+            success = ToolSuccessResult(
+                title: "PDF Split",
+                summary: "Created 2 parts — \(parts.firstPart.pageCount) + \(parts.secondPart.pageCount) pages",
+                documents: [parts.firstPart, parts.secondPart]
+            )
         } catch {
             self.error = error.localizedDescription
         }

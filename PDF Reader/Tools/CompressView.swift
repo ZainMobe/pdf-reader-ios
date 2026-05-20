@@ -13,10 +13,31 @@ struct CompressView: View {
     @State private var quality: PDFOperations.CompressionQuality = .medium
     @State private var isWorking = false
     @State private var error: String?
+    @State private var success: ToolSuccessResult?
 
     var body: some View {
         NavigationStack {
-            Form {
+            Group {
+                if let success {
+                    ToolSuccessView(result: success) { dismiss() }
+                } else {
+                    formContent
+                }
+            }
+            .navigationTitle(success == nil ? "Compress PDF" : "Done")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if success != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private var formContent: some View {
+        Form {
                 Section("Quality") {
                     ForEach(PDFOperations.CompressionQuality.allCases) { option in
                         Button {
@@ -74,8 +95,6 @@ struct CompressView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("Compress PDF")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -109,19 +128,29 @@ struct CompressView: View {
             } message: {
                 Text(error ?? "")
             }
-        }
     }
 
     private func apply() {
         guard let doc = selectedDoc else { return }
+        let originalSize = doc.fileSize
         isWorking = true
         // Defer one frame so the progress overlay renders before the
         // synchronous compression starts.
         DispatchQueue.main.async {
             do {
-                try PDFOperations.compress(doc, quality: quality, in: modelContext)
+                let compressed = try PDFOperations.compress(doc, quality: quality, in: modelContext)
                 isWorking = false
-                dismiss()
+                let saved = max(0, originalSize - compressed.fileSize)
+                let pct = originalSize > 0
+                    ? Int((Double(saved) / Double(originalSize)) * 100)
+                    : 0
+                let from = ByteCountFormatter.string(fromByteCount: originalSize, countStyle: .file)
+                let to = ByteCountFormatter.string(fromByteCount: compressed.fileSize, countStyle: .file)
+                success = ToolSuccessResult(
+                    title: "PDF Compressed",
+                    summary: "\(pct)% smaller — \(from) → \(to)",
+                    documents: [compressed]
+                )
             } catch {
                 self.error = error.localizedDescription
                 isWorking = false

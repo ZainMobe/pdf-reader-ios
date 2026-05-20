@@ -11,10 +11,31 @@ struct MergePDFsView: View {
     @State private var selected: [Document] = []
     @State private var title = "Merged PDF"
     @State private var error: String?
+    @State private var success: ToolSuccessResult?
 
     var body: some View {
         NavigationStack {
-            List {
+            Group {
+                if let success {
+                    ToolSuccessView(result: success) { dismiss() }
+                } else {
+                    formContent
+                }
+            }
+            .navigationTitle(success == nil ? "Merge PDFs" : "Done")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if success != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private var formContent: some View {
+        List {
                 Section("Title") {
                     TextField("Title", text: $title)
                 }
@@ -40,8 +61,6 @@ struct MergePDFsView: View {
                     }
                 }
             }
-            .navigationTitle("Merge PDFs")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -63,7 +82,6 @@ struct MergePDFsView: View {
             } message: {
                 Text(error ?? "")
             }
-        }
     }
 
     private var mergeLabel: String {
@@ -108,12 +126,17 @@ struct MergePDFsView: View {
 
     private func merge() {
         do {
-            try PDFOperations.merge(
+            let sourceCount = selected.count
+            let merged = try PDFOperations.merge(
                 selected,
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                 in: modelContext
             )
-            dismiss()
+            success = ToolSuccessResult(
+                title: "PDFs Merged",
+                summary: "Combined \(sourceCount) documents into 1 — \(merged.pageCount) pages total",
+                documents: [merged]
+            )
         } catch {
             self.error = error.localizedDescription
         }

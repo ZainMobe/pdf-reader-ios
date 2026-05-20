@@ -9,10 +9,31 @@ struct NewBlankPDFView: View {
     @State private var pageCount = 1
     @State private var pageSize: PDFOperations.PageSize = .letter
     @State private var error: String?
+    @State private var success: ToolSuccessResult?
 
     var body: some View {
         NavigationStack {
-            Form {
+            Group {
+                if let success {
+                    ToolSuccessView(result: success) { dismiss() }
+                } else {
+                    formContent
+                }
+            }
+            .navigationTitle(success == nil ? "New Blank PDF" : "Done")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if success != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+
+    private var formContent: some View {
+        Form {
                 Section("Title") {
                     TextField("Untitled", text: $title)
                 }
@@ -27,8 +48,6 @@ struct NewBlankPDFView: View {
                     }
                 }
             }
-            .navigationTitle("New Blank PDF")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
@@ -50,18 +69,21 @@ struct NewBlankPDFView: View {
             } message: {
                 Text(error ?? "")
             }
-        }
     }
 
     private func create() {
         do {
-            try PDFOperations.createBlank(
+            let blank = try PDFOperations.createBlank(
                 pageCount: pageCount,
                 pageSize: pageSize,
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                 in: modelContext
             )
-            dismiss()
+            success = ToolSuccessResult(
+                title: "Blank PDF Created",
+                summary: "\(blank.pageCount) \(blank.pageCount == 1 ? "page" : "pages") · \(pageSize.displayName)",
+                documents: [blank]
+            )
         } catch {
             self.error = error.localizedDescription
         }
