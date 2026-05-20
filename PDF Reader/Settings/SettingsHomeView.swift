@@ -4,6 +4,13 @@ import StoreKit
 
 /// SettingsHomeView — App preferences, subscription status, sync, and about.
 struct SettingsHomeView: View {
+    static let versionString: String = {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = info?["CFBundleVersion"] as? String ?? "—"
+        return "\(version) (\(build))"
+    }()
+
     @State private var showingPaywall = false
     @State private var showingManageSubscription = false
     private let entitlements = EntitlementStore.shared
@@ -97,7 +104,7 @@ struct SettingsHomeView: View {
                     }
                 }
                 Section("About") {
-                    LabeledContent("Version", value: "1.0.0 (1)")
+                    LabeledContent("Version", value: Self.versionString)
                 }
             }
             .navigationTitle("Settings")
