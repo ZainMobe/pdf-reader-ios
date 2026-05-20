@@ -8,7 +8,7 @@ final class Tag {
     var colorHex: String = "blue"
 
     @Relationship(inverse: \Document.tags)
-    var documents: [Document] = []
+    var documents: [Document]? = []
 
     init(name: String, colorHex: String = "blue") {
         self.name = name

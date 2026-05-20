@@ -30,8 +30,8 @@ struct DocumentInfoSheet: View {
                     if let folder = document.folder {
                         InfoRow(label: "Folder", value: folder.name)
                     }
-                    if !document.tags.isEmpty {
-                        InfoRow(label: "Tags", value: document.tags.map(\.name).joined(separator: ", "))
+                    if let tags = document.tags, !tags.isEmpty {
+                        InfoRow(label: "Tags", value: tags.map(\.name).joined(separator: ", "))
                     }
                 }
                 Section("Status") {

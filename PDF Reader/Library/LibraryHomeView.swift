@@ -152,7 +152,7 @@ struct LibraryHomeView: View {
                     if let doc = newTagDocument, !trimmed.isEmpty {
                         let tag = Tag(name: trimmed)
                         modelContext.insert(tag)
-                        doc.tags.append(tag)
+                        doc.tags = (doc.tags ?? []) + [tag]
                     }
                     newTagDocument = nil
                     newTagName = ""
@@ -195,7 +195,7 @@ struct LibraryHomeView: View {
             result = result.filter { doc in
                 doc.title.localizedCaseInsensitiveContains(trimmed)
                     || (doc.ocrText?.localizedCaseInsensitiveContains(trimmed) ?? false)
-                    || doc.tags.contains { $0.name.localizedCaseInsensitiveContains(trimmed) }
+                    || (doc.tags ?? []).contains { $0.name.localizedCaseInsensitiveContains(trimmed) }
             }
         }
 
@@ -221,7 +221,7 @@ struct LibraryHomeView: View {
                             Image(systemName: "folder")
                             Text(folder.name)
                             Spacer()
-                            Text("\(folder.documents.count)")
+                            Text("\((folder.documents ?? []).count)")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -397,7 +397,7 @@ struct LibraryHomeView: View {
                     } label: {
                         HStack {
                             Text(tag.name)
-                            if doc.tags.contains(where: { $0.id == tag.id }) {
+                            if (doc.tags ?? []).contains(where: { $0.id == tag.id }) {
                                 Image(systemName: "checkmark")
                             }
                         }
@@ -434,11 +434,13 @@ struct LibraryHomeView: View {
     // MARK: - Actions
 
     private func toggleTag(_ tag: Tag, on doc: Document) {
-        if let index = doc.tags.firstIndex(where: { $0.id == tag.id }) {
-            doc.tags.remove(at: index)
+        var tags = doc.tags ?? []
+        if let index = tags.firstIndex(where: { $0.id == tag.id }) {
+            tags.remove(at: index)
         } else {
-            doc.tags.append(tag)
+            tags.append(tag)
         }
+        doc.tags = tags
     }
 
     private func handleImport(_ result: Result<[URL], any Error>) {
@@ -536,8 +538,8 @@ private struct DocumentCard: View {
                 Text(document.title)
                     .font(.headline)
                     .lineLimit(2)
-                if !document.tags.isEmpty {
-                    TagRow(tags: document.tags, limit: 3)
+                if let tags = document.tags, !tags.isEmpty {
+                    TagRow(tags: tags, limit: 3)
                 }
                 HStack(spacing: DesignSystem.Spacing.xs) {
                     Text("\(document.pageCount) pages")
@@ -594,8 +596,8 @@ private struct DocumentListRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                if !document.tags.isEmpty {
-                    TagRow(tags: document.tags, limit: 4)
+                if let tags = document.tags, !tags.isEmpty {
+                    TagRow(tags: tags, limit: 4)
                 }
             }
             Spacer()

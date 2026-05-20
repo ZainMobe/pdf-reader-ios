@@ -11,10 +11,10 @@ final class Folder {
     var parent: Folder?
 
     @Relationship(deleteRule: .cascade, inverse: \Folder.parent)
-    var children: [Folder] = []
+    var children: [Folder]? = []
 
     @Relationship(inverse: \Document.folder)
-    var documents: [Document] = []
+    var documents: [Document]? = []
 
     init(name: String, colorHex: String? = nil, parent: Folder? = nil) {
         self.name = name

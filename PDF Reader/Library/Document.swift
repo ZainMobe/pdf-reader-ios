@@ -23,7 +23,7 @@ final class Document {
     var ocrText: String?
 
     var folder: Folder?
-    var tags: [Tag] = []
+    var tags: [Tag]? = []
 
     @Transient
     var fileURL: URL {

@@ -51,7 +51,7 @@ struct FolderManagerView: View {
                                     Text(folder.name)
                                         .foregroundStyle(.primary)
                                     Spacer()
-                                    Text("\(folder.documents.count)")
+                                    Text("\((folder.documents ?? []).count)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
