@@ -8,28 +8,16 @@
 
 /* Begin PBXBuildFile section */
 		BFA9AF822FBC62F000EF62F7 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = BFA9AF812FBC62F000EF62F7 /* RevenueCat */; };
+		BFA9AFB62FBD93B900EF62F7 /* SwiftyDropbox in Frameworks */ = {isa = PBXBuildFile; productRef = BFA9AFB52FBD93B900EF62F7 /* SwiftyDropbox */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		BFA9AAB32FBC091400EF62F7 /* PDF Reader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "PDF Reader.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		BFA9AF7F2FBC62BE00EF62F7 /* Exceptions for "PDF Reader" folder in "PDF Reader" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"PDF-Reader-Info.plist",
-			);
-			target = BFA9AAB22FBC091400EF62F7 /* PDF Reader */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		BFA9AAB52FBC091400EF62F7 /* PDF Reader */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				BFA9AF7F2FBC62BE00EF62F7 /* Exceptions for "PDF Reader" folder in "PDF Reader" target */,
-			);
 			path = "PDF Reader";
 			sourceTree = "<group>";
 		};
@@ -41,6 +29,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BFA9AF822FBC62F000EF62F7 /* RevenueCat in Frameworks */,
+				BFA9AFB62FBD93B900EF62F7 /* SwiftyDropbox in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -84,6 +73,7 @@
 			name = "PDF Reader";
 			packageProductDependencies = (
 				BFA9AF812FBC62F000EF62F7 /* RevenueCat */,
+				BFA9AFB52FBD93B900EF62F7 /* SwiftyDropbox */,
 			);
 			productName = "PDF Reader";
 			productReference = BFA9AAB32FBC091400EF62F7 /* PDF Reader.app */;
@@ -115,6 +105,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				BFA9AF802FBC62F000EF62F7 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
+				BFA9AFB42FBD93B900EF62F7 /* XCRemoteSwiftPackageReference "SwiftyDropbox" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BFA9AAB42FBC091400EF62F7 /* Products */;
@@ -284,7 +275,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "PDF-Reader-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "PDF AI";
+				INFOPLIST_KEY_CFBundleDisplayName = "PDF Editor";
 				INFOPLIST_KEY_NSCameraUsageDescription = "PDF AI uses the camera to scan paper documents into PDFs.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -321,7 +312,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "PDF-Reader-Info.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "PDF AI";
+				INFOPLIST_KEY_CFBundleDisplayName = "PDF Editor";
 				INFOPLIST_KEY_NSCameraUsageDescription = "PDF AI uses the camera to scan paper documents into PDFs.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -378,6 +369,14 @@
 				minimumVersion = 5.73.0;
 			};
 		};
+		BFA9AFB42FBD93B900EF62F7 /* XCRemoteSwiftPackageReference "SwiftyDropbox" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/dropbox/SwiftyDropbox.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 10.2.4;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -385,6 +384,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BFA9AF802FBC62F000EF62F7 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
 			productName = RevenueCat;
+		};
+		BFA9AFB52FBD93B900EF62F7 /* SwiftyDropbox */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BFA9AFB42FBD93B900EF62F7 /* XCRemoteSwiftPackageReference "SwiftyDropbox" */;
+			productName = SwiftyDropbox;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

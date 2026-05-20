@@ -25,8 +25,9 @@ final class ReaderController {
             disconnect()
             self.documentURL = documentURL
             let presenter = PDFFilePresenter(url: documentURL) { [weak self] in
+                let owner = self
                 Task { @MainActor in
-                    self?.reloadFromExternalChange()
+                    owner?.reloadFromExternalChange()
                 }
             }
             self.presenter = presenter

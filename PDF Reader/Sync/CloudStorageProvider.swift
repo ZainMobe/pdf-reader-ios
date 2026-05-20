@@ -8,10 +8,11 @@ import Foundation
 /// File import from any installed File Provider already works through the
 /// system `.fileImporter` in `LibraryHomeView`; these providers are about
 /// first-class sync, not just import.
+@MainActor
 protocol CloudStorageProvider: Identifiable {
-    var id: String { get }
-    var displayName: String { get }
-    var iconSystemName: String { get }
+    nonisolated var id: String { get }
+    nonisolated var displayName: String { get }
+    nonisolated var iconSystemName: String { get }
 
     /// Whether the underlying account or app is reachable on this device.
     var isInstalled: Bool { get }

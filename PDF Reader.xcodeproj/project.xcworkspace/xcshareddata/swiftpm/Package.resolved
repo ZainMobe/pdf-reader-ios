@@ -1,5 +1,5 @@
 {
-  "originHash" : "533de208f7207fdd36b99a2f0036707fca012c23defe0e4e99a820106aff336d",
+  "originHash" : "7cbbf7857b87fa9ef0d806e5d97ca649a202c7d45e1729efceaae90cde80e816",
   "pins" : [
     {
       "identity" : "purchases-ios-spm",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "6b95744e70f1edc43f89f2b522b0832ddfdd41a1",
         "version" : "5.73.0"
+      }
+    },
+    {
+      "identity" : "swiftydropbox",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/dropbox/SwiftyDropbox.git",
+      "state" : {
+        "revision" : "e315e0b14edb83f022134aef389deb4e8bee6bbf",
+        "version" : "10.2.4"
       }
     }
   ],

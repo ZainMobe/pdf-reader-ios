@@ -15,7 +15,7 @@ struct SearchSheet: View {
     @State private var hasSearched = false
     @State private var pdf: PDFDocument?
 
-    private static let maxResults = 200
+    nonisolated private static let maxResults = 200
 
     struct Match: Identifiable {
         let id = UUID()
@@ -131,7 +131,7 @@ struct SearchSheet: View {
         }
     }
 
-    private static func makeSnippet(for selection: PDFSelection, in page: PDFPage, query: String) -> AttributedString {
+    nonisolated private static func makeSnippet(for selection: PDFSelection, in page: PDFPage, query: String) -> AttributedString {
         let fallback = AttributedString(selection.string ?? query)
         guard
             let pageText = page.string,

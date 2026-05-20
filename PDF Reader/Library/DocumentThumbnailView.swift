@@ -44,7 +44,7 @@ struct DocumentThumbnailView: View {
         let url = documentURL
         let id = documentID
         let generated = await Task.detached(priority: .userInitiated) {
-            ThumbnailGenerator.thumbnail(at: url, size: ThumbnailCache.targetSize)
+            await ThumbnailGenerator.thumbnail(at: url, size: ThumbnailCache.targetSize)
         }.value
         guard let generated else { return }
         ThumbnailCache.shared.set(generated, for: id)
@@ -66,7 +66,7 @@ enum ThumbnailGenerator {
 
 /// Process-wide in-memory cache so the same first-page thumbnail isn't
 /// rendered repeatedly as the user scrolls the grid or toggles list/grid.
-final class ThumbnailCache {
+final class ThumbnailCache: @unchecked Sendable {
     static let shared = ThumbnailCache()
     /// Size requested from PDFKit. The card and list row downscale this as
     /// needed via `scaledToFit()`.

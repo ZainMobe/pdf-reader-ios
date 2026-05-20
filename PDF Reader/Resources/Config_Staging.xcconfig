@@ -11,3 +11,10 @@
 // Safe to commit — RevenueCat client keys are designed to ship in the binary.
 REVENUECAT_API_KEY = test_FRIzWebgAwgUOfsksltCeKwwFMX
 
+// Dropbox app key for the staging build. Get it from
+// dropbox.com/developers/apps → your app → Settings → "App key".
+// Safe to ship — PKCE OAuth doesn't need the app secret.
+// IMPORTANT: also update the URL scheme `db-$(DROPBOX_APP_KEY)` registration
+// in Info.plist (CFBundleURLTypes) so OAuth redirects can return to the app.
+DROPBOX_APP_KEY = xiw36320ig4wy2j
+

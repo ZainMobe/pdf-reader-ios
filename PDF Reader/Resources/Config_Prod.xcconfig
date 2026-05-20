@@ -8,3 +8,6 @@
 // RevenueCat production API key. Get it from
 // app.revenuecat.com → Project → Apps & providers → API keys → Apple App Store.
 REVENUECAT_API_KEY = appl_rZWMToMjkvHlpJavCTuDfMOymQx
+
+// Dropbox app key. Get it from dropbox.com/developers/apps → Settings → "App key".
+DROPBOX_APP_KEY = xiw36320ig4wy2j

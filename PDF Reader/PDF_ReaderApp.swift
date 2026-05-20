@@ -12,6 +12,9 @@ struct PDFAIApp: App {
         // query Purchases.shared right after launch. API key is injected
         // into Info.plist via the active xcconfig (Config_Staging / Config_Prod).
         Self.configureRevenueCat()
+        // Touch the Dropbox manager so its init configures the SDK before
+        // any UI calls `signIn(from:)`. Reads DROPBOX_APP_KEY from Info.plist.
+        _ = DropboxAuthManager.shared
 
         let schema = Schema([
             Document.self,
@@ -50,6 +53,9 @@ struct PDFAIApp: App {
             if let modelContainer {
                 RootView()
                     .modelContainer(modelContainer)
+                    .onOpenURL { url in
+                        DropboxAuthManager.shared.handleRedirect(url)
+                    }
             } else {
                 BootErrorView(message: bootError ?? "Couldn't open the document database.")
             }

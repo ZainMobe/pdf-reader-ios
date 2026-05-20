@@ -12,8 +12,8 @@ struct DropboxProvider: CloudStorageProvider {
     let id = "dropbox"
     let displayName = "Dropbox"
     let iconSystemName = "shippingbox"
-    let isInstalled = false
-    let isSupported = false
+    var isInstalled: Bool { DropboxAuthManager.shared.isSignedIn }
+    var isSupported: Bool { DropboxAuthManager.shared.isConfigured }
 }
 
 struct GoogleDriveProvider: CloudStorageProvider {

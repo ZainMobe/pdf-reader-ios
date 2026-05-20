@@ -4,5 +4,23 @@
 <dict>
 	<key>REVENUECAT_API_KEY</key>
 	<string>$(REVENUECAT_API_KEY)</string>
+	<key>DROPBOX_APP_KEY</key>
+	<string>$(DROPBOX_APP_KEY)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>Dropbox OAuth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>db-$(DROPBOX_APP_KEY)</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>dbapi-2</string>
+		<string>dbapi-8-emm</string>
+	</array>
 </dict>
 </plist>

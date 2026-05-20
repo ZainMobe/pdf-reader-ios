@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// Tool sheet for creating a blank PDF with a chosen page count + size.
 struct NewBlankPDFView: View {
