@@ -11,6 +11,9 @@ struct OnboardingView: View {
     /// Bumps every time a page becomes active so the child view can re-run
     /// its entrance animations from scratch.
     @State private var pageNonce: Int = 0
+    /// Tracks the most recent navigation direction so the slide transition
+    /// follows the swipe (forward → slide from trailing, back → from leading).
+    @State private var goingForward: Bool = true
 
     var body: some View {
         ZStack {
@@ -72,12 +75,32 @@ struct OnboardingView: View {
             }
         }
         .id(page)
-        .transition(
-            .asymmetric(
-                insertion: .move(edge: .trailing).combined(with: .opacity),
-                removal: .move(edge: .leading).combined(with: .opacity)
-            )
+        .transition(slideTransition)
+        .contentShape(Rectangle())
+        .gesture(swipeGesture)
+    }
+
+    private var slideTransition: AnyTransition {
+        .asymmetric(
+            insertion: .move(edge: goingForward ? .trailing : .leading).combined(with: .opacity),
+            removal: .move(edge: goingForward ? .leading : .trailing).combined(with: .opacity)
         )
+    }
+
+    /// Horizontal swipe → previous / next page. Vertical motion is allowed to
+    /// dominate so accidental scroll-like drags don't trigger navigation.
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                let dx = value.translation.width
+                let dy = value.translation.height
+                guard abs(dx) > abs(dy) * 1.5, abs(dx) > 50 else { return }
+                if dx < 0 {
+                    advance()
+                } else {
+                    goBack()
+                }
+            }
     }
 
     // MARK: - Bottom bar
@@ -130,12 +153,23 @@ struct OnboardingView: View {
     private func advance() {
         Haptics.impact(.light)
         if let next = page.next {
+            goingForward = true
             withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
                 page = next
                 pageNonce &+= 1
             }
         } else {
             finish()
+        }
+    }
+
+    private func goBack() {
+        guard let previous = page.previous else { return }
+        Haptics.impact(.light)
+        goingForward = false
+        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+            page = previous
+            pageNonce &+= 1
         }
     }
 
@@ -153,6 +187,10 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
 
     var next: OnboardingPage? {
         OnboardingPage(rawValue: rawValue + 1)
+    }
+
+    var previous: OnboardingPage? {
+        OnboardingPage(rawValue: rawValue - 1)
     }
 }
 
