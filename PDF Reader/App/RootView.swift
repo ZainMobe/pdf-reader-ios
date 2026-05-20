@@ -39,7 +39,10 @@ struct RootView: View {
             .tabViewStyle(.sidebarAdaptable)
 
             addFloatingButton
-                .padding(.bottom, 28)
+                // Sit clearly ABOVE the Liquid Glass tab bar (~70pt tall on
+                // iPhone) so the FAB reads as a separate floating element
+                // rather than overlapping the tab icons.
+                .padding(.bottom, 92)
         }
         .fileImporter(
             isPresented: $showingImporter,
@@ -63,7 +66,7 @@ struct RootView: View {
                 .padding(.horizontal, DesignSystem.Spacing.l)
                 .padding(.vertical, DesignSystem.Spacing.m)
                 .glassEffect(.regular, in: .capsule)
-                .padding(.bottom, 110)
+                .padding(.bottom, 170)
             }
         }
         .alert(
