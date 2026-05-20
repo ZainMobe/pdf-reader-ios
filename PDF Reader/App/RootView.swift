@@ -14,9 +14,11 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var selection: Destination = .library
+    @State private var previousSelection: Destination = .library
     @State private var showingImporter = false
     @State private var showingScanner = false
     @State private var showingNewBlank = false
+    @State private var showingAddMenu = false
     @State private var importError: String?
     @State private var isProcessingScan = false
 
@@ -29,6 +31,13 @@ struct RootView: View {
                 Tab("AI", systemImage: "sparkles", value: Destination.ai) {
                     AIAssistantView()
                 }
+                // Invisible center placeholder so Library/AI sit on the left
+                // and Tools/Settings sit on the right, with the FAB occupying
+                // the middle slot. Selecting it pops the Add menu and bounces
+                // selection back to the previous tab.
+                Tab("", systemImage: "", value: Destination.add) {
+                    Color.clear
+                }
                 Tab("Tools", systemImage: "wrench.and.screwdriver", value: Destination.tools) {
                     ToolsHomeView()
                 }
@@ -37,12 +46,16 @@ struct RootView: View {
                 }
             }
             .tabViewStyle(.sidebarAdaptable)
+            .onChange(of: selection) { oldValue, newValue in
+                if newValue == .add {
+                    selection = oldValue == .add ? previousSelection : oldValue
+                    showingAddMenu = true
+                } else {
+                    previousSelection = newValue
+                }
+            }
 
             addFloatingButton
-                // Sit clearly ABOVE the Liquid Glass tab bar (~70pt tall on
-                // iPhone) so the FAB reads as a separate floating element
-                // rather than overlapping the tab icons.
-                .padding(.bottom, 92)
         }
         .fileImporter(
             isPresented: $showingImporter,
@@ -66,7 +79,7 @@ struct RootView: View {
                 .padding(.horizontal, DesignSystem.Spacing.l)
                 .padding(.vertical, DesignSystem.Spacing.m)
                 .glassEffect(.regular, in: .capsule)
-                .padding(.bottom, 170)
+//                .padding(.bottom, 170)
             }
         }
         .alert(
@@ -85,7 +98,22 @@ struct RootView: View {
     // MARK: - Add FAB
 
     private var addFloatingButton: some View {
-        Menu {
+        Button {
+            Haptics.impact(.light)
+            showingAddMenu = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 60, height: 60)
+                .glassEffect(
+                    .regular.tint(Color.accentColor).interactive(),
+                    in: .circle
+                )
+                .shadow(color: Color.black.opacity(0.18), radius: 8, y: 4)
+        }
+        .accessibilityLabel("Add")
+        .confirmationDialog("Add to Library", isPresented: $showingAddMenu, titleVisibility: .visible) {
             if VNDocumentCameraViewController.isSupported {
                 Button {
                     Haptics.impact(.light)
@@ -109,20 +137,7 @@ struct RootView: View {
             } label: {
                 Label("New Blank PDF", systemImage: "doc.badge.plus")
             }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 60, height: 60)
-                .background(
-                    Circle()
-                        .fill(Color.accentColor)
-                        .shadow(color: Color.black.opacity(0.25), radius: 10, y: 6)
-                )
         }
-        .menuOrder(.fixed)
-        .sensoryFeedback(.impact(weight: .light), trigger: showingScanner)
-        .accessibilityLabel("Add")
     }
 
     // MARK: - Action handlers
@@ -165,7 +180,7 @@ struct RootView: View {
 }
 
 private enum Destination: Hashable {
-    case library, ai, tools, settings
+    case library, ai, add, tools, settings
 }
 
 #Preview {
