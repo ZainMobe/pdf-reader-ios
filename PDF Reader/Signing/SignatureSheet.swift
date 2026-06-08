@@ -178,10 +178,16 @@ struct SignatureSheet: View {
             }
             .frame(maxWidth: .infinity, minHeight: 200, maxHeight: 320)
 
-            HStack {
+            HStack(spacing: DesignSystem.Spacing.m) {
                 Button("Clear") {
                     canvasView.drawing = PKDrawing()
                     drawingIsEmpty = true
+                }
+                Button {
+                    canvasView.undoManager?.undo()
+                    drawingIsEmpty = canvasView.drawing.bounds.isEmpty
+                } label: {
+                    Label("Undo", systemImage: "arrow.uturn.backward")
                 }
                 Spacer()
             }

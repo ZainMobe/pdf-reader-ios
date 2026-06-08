@@ -28,6 +28,10 @@ struct SignaturePlacementSheet: View {
     @State private var centerYNorm: CGFloat = 0.78
     @State private var widthNorm: CGFloat = 0.33
     @State private var rotationDegrees: CGFloat = 0
+    /// Snapshot of `widthNorm` taken on the first frame of a corner-handle
+    /// drag so subsequent translation values resize from the original size
+    /// instead of compounding.
+    @State private var resizeStartWidthNorm: CGFloat?
 
     @GestureState private var dragOffset: CGSize = .zero
     @GestureState private var liveMagnification: CGFloat = 1.0
@@ -36,6 +40,13 @@ struct SignaturePlacementSheet: View {
     private var aspect: CGFloat {
         signatureImage.size.height / max(signatureImage.size.width, 1)
     }
+
+    /// Stable coordinate space for drag gestures. Reading translation in
+    /// this space (anchored to the placement view, which doesn't move)
+    /// avoids the feedback loop where the dragged view follows the finger,
+    /// which moves the gesture's local coord space, which alters the next
+    /// translation reading — producing visible jitter.
+    private static let placementSpace = "placement"
 
     var body: some View {
         NavigationStack {
@@ -67,7 +78,17 @@ struct SignaturePlacementSheet: View {
                         .padding(DesignSystem.Spacing.xl)
                         .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
                     }
+
+                    if didLoadPage {
+                        VStack {
+                            Spacer()
+                            sizeSliderPanel
+                                .padding(.horizontal, DesignSystem.Spacing.l)
+                                .padding(.bottom, DesignSystem.Spacing.l)
+                        }
+                    }
                 }
+                .coordinateSpace(.named(Self.placementSpace))
             }
             .navigationTitle("Place Signature")
             .navigationBarTitleDisplayMode(.inline)
@@ -83,11 +104,6 @@ struct SignaturePlacementSheet: View {
                         .buttonStyle(.glassProminent)
                         .disabled(!didLoadPage)
                 }
-                ToolbarItem(placement: .bottomBar) {
-                    Label("Drag · Pinch · Rotate with two fingers", systemImage: "hand.draw")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
             }
             .task { await renderPage() }
         }
@@ -100,7 +116,7 @@ struct SignaturePlacementSheet: View {
         let centerY = pageRect.minY + pageRect.height * centerYNorm + dragOffset.height
         let totalRotation = Angle(degrees: rotationDegrees) + liveRotation
 
-        let dragGesture = DragGesture()
+        let dragGesture = DragGesture(coordinateSpace: .named(Self.placementSpace))
             .updating($dragOffset) { value, state, _ in
                 state = value.translation
             }
@@ -129,21 +145,85 @@ struct SignaturePlacementSheet: View {
                 Haptics.selection()
             }
 
-        return Image(uiImage: signatureImage)
-            .resizable()
-            .scaledToFit()
-            .frame(width: liveWidth, height: liveHeight)
-            .overlay(
-                RoundedRectangle(cornerRadius: DesignSystem.Radius.small)
-                    .strokeBorder(.tint, lineWidth: 1.5)
-            )
-            .rotationEffect(totalRotation)
-            .position(x: centerX, y: centerY)
-            .gesture(
-                SimultaneousGesture(
-                    SimultaneousGesture(dragGesture, magnifyGesture),
-                    rotateGesture
+        return ZStack {
+            Image(uiImage: signatureImage)
+                .resizable()
+                .scaledToFit()
+                .frame(width: liveWidth, height: liveHeight)
+                .overlay(
+                    RoundedRectangle(cornerRadius: DesignSystem.Radius.small)
+                        .strokeBorder(.tint, lineWidth: 1.5)
                 )
+                .gesture(
+                    SimultaneousGesture(
+                        SimultaneousGesture(dragGesture, magnifyGesture),
+                        rotateGesture
+                    )
+                )
+
+            ForEach(SignatureCorner.allCases) { corner in
+                resizeHandle(
+                    corner: corner,
+                    frameWidth: liveWidth,
+                    frameHeight: liveHeight,
+                    pageWidth: pageRect.width
+                )
+            }
+        }
+        .frame(width: liveWidth, height: liveHeight)
+        .rotationEffect(totalRotation)
+        .position(x: centerX, y: centerY)
+    }
+
+    private var sizeSliderPanel: some View {
+        HStack(spacing: DesignSystem.Spacing.m) {
+            Image(systemName: "minus.magnifyingglass")
+                .foregroundStyle(.secondary)
+            Slider(value: $widthNorm, in: 0.1...0.9)
+            Image(systemName: "plus.magnifyingglass")
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, DesignSystem.Spacing.m)
+        .padding(.vertical, DesignSystem.Spacing.s)
+        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+    }
+
+    private func resizeHandle(
+        corner: SignatureCorner,
+        frameWidth: CGFloat,
+        frameHeight: CGFloat,
+        pageWidth: CGFloat
+    ) -> some View {
+        let outwardX = corner.outwardX
+        let outwardY = corner.outwardY
+        let offsetX = (frameWidth / 2) * outwardX
+        let offsetY = (frameHeight / 2) * outwardY
+
+        return Circle()
+            .fill(Color(.systemBackground))
+            .overlay(Circle().strokeBorder(.tint, lineWidth: 2))
+            .frame(width: 22, height: 22)
+            .offset(x: offsetX, y: offsetY)
+            .gesture(
+                DragGesture(coordinateSpace: .named(Self.placementSpace))
+                    .onChanged { value in
+                        if resizeStartWidthNorm == nil {
+                            resizeStartWidthNorm = widthNorm
+                        }
+                        let start = resizeStartWidthNorm ?? widthNorm
+                        guard pageWidth > 0 else { return }
+                        let dx = value.translation.width * outwardX
+                        let dyAsX = aspect > 0
+                            ? (value.translation.height * outwardY / aspect)
+                            : 0
+                        let avgDelta = (dx + dyAsX) / 2
+                        let newPixelWidth = start * pageWidth + 2 * avgDelta
+                        widthNorm = clamp(newPixelWidth / pageWidth, 0.1, 0.9)
+                    }
+                    .onEnded { _ in
+                        resizeStartWidthNorm = nil
+                        Haptics.selection()
+                    }
             )
     }
 
@@ -208,5 +288,25 @@ struct SignaturePlacementSheet: View {
 
     private func clamp(_ value: CGFloat, _ lower: CGFloat, _ upper: CGFloat) -> CGFloat {
         min(max(value, lower), upper)
+    }
+}
+
+private enum SignatureCorner: CaseIterable, Identifiable {
+    case topLeft, topRight, bottomLeft, bottomRight
+
+    var id: Self { self }
+
+    var outwardX: CGFloat {
+        switch self {
+        case .topLeft, .bottomLeft: -1
+        case .topRight, .bottomRight: 1
+        }
+    }
+
+    var outwardY: CGFloat {
+        switch self {
+        case .topLeft, .topRight: -1
+        case .bottomLeft, .bottomRight: 1
+        }
     }
 }

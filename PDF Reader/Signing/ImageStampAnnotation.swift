@@ -11,10 +11,9 @@ final class ImageStampAnnotation: PDFAnnotation {
     private let rotationDegrees: CGFloat
 
     /// `rotationDegrees` is the clockwise rotation in degrees, matching
-    /// SwiftUI's RotationGesture convention. In `draw` we apply the Y-flip
-    /// (needed because CGImage data is top-down) *before* rotating, so
-    /// rotation happens inside the already-flipped frame and CW positive
-    /// in SwiftUI maps directly to CW positive in CG after the flip.
+    /// SwiftUI's RotationGesture convention. The Y-flip in `draw` happens
+    /// *before* the rotation so rotation runs inside the already-flipped
+    /// frame and CW positive in SwiftUI maps directly to CW positive in CG.
     init(image: UIImage, bounds: CGRect, rotationDegrees: CGFloat = 0) {
         self.image = image
         self.rotationDegrees = rotationDegrees
@@ -25,26 +24,18 @@ final class ImageStampAnnotation: PDFAnnotation {
     required init?(coder: NSCoder) { nil }
 
     override func draw(with box: PDFDisplayBox, in context: CGContext) {
-        guard let cgImage = image.cgImage else { return }
         context.saveGState()
+        defer { context.restoreGState() }
 
         // Move origin to the centre of the annotation bounds in page space
         // (PDF page space is Y-up).
         context.translateBy(x: bounds.midX, y: bounds.midY)
 
-        // CGImage bytes are top-down, PDF page space is Y-up. Flip Y FIRST
-        // so the image draws upright; everything below operates in
-        // already-flipped space.
-        //
-        // Critically, this must happen *before* the rotation. Applying
-        // scale(1, -1) after a rotation flips the image's local Y axis,
-        // which becomes a mirror in original-screen-space whenever the
-        // rotation isn't a multiple of 180°.
+        // PDF page space is Y-up; UIImage.draw expects a Y-down (UIKit)
+        // frame, so flip Y FIRST and let everything below run in the
+        // already-flipped frame.
         context.scaleBy(x: 1.0, y: -1.0)
 
-        // After the flip we're in a frame where positive rotations rotate
-        // clockwise on screen, matching SwiftUI's RotationGesture
-        // convention — so we apply `rotationDegrees` without negation.
         if rotationDegrees != 0 {
             context.rotate(by: rotationDegrees * .pi / 180)
         }
@@ -55,7 +46,13 @@ final class ImageStampAnnotation: PDFAnnotation {
             width: bounds.width,
             height: bounds.height
         )
-        context.draw(cgImage, in: drawRect)
-        context.restoreGState()
+
+        // UIImage.draw honours `imageOrientation`; the previous
+        // CGContext.draw(cgImage:) path ignored it, which made photo-
+        // imported and PencilKit-rendered signatures stamp mirrored
+        // relative to the placement preview.
+        UIGraphicsPushContext(context)
+        image.draw(in: drawRect)
+        UIGraphicsPopContext()
     }
 }
