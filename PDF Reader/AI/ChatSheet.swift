@@ -395,6 +395,7 @@ private struct SuggestedPromptCard: View {
         }
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
         .padding(DesignSystem.Spacing.m)
+        .contentShape(Rectangle())
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: DesignSystem.Radius.medium))
     }
 }
