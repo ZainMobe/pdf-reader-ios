@@ -20,6 +20,17 @@ final class ReaderController {
     private var saveTask: Task<Void, Never>?
     private var presenter: PDFFilePresenter?
 
+    /// Stack of recently-added annotation groups. Each user action (highlight,
+    /// sticky note, ink, text, redaction, signature) appends one entry; undo
+    /// pops the most recent and removes those annotations. Cleared when the
+    /// document is reloaded from disk because the in-memory annotation
+    /// references no longer match the new PDFDocument.
+    private var undoStack: [[PDFAnnotation]] = []
+
+    /// True when there's at least one annotation edit that can be reverted.
+    /// Drives the visibility of the Reader's floating undo button.
+    var canUndo: Bool { !undoStack.isEmpty }
+
     func attach(pdfView: PDFView, documentURL: URL, documentID: UUID) {
         self.pdfView = pdfView
         self.documentID = documentID
@@ -112,6 +123,7 @@ final class ReaderController {
         ) ?? .yellow
         let highlightColor = colorChoice.uiColor.withAlphaComponent(0.4)
 
+        var added: [PDFAnnotation] = []
         for lineSelection in selection.selectionsByLine() {
             guard let page = lineSelection.pages.first else { continue }
             let bounds = lineSelection.bounds(for: page)
@@ -123,8 +135,10 @@ final class ReaderController {
             annotation.color = highlightColor
             annotation.contents = lineSelection.string
             page.addAnnotation(annotation)
+            added.append(annotation)
         }
         pdfView.clearSelection()
+        recordEdit(added)
         scheduleSave()
     }
 
@@ -153,6 +167,7 @@ final class ReaderController {
         annotation.color = .systemYellow
         annotation.iconType = .note
         page.addAnnotation(annotation)
+        recordEdit([annotation])
         scheduleSave()
     }
 
@@ -165,6 +180,7 @@ final class ReaderController {
         let bounds = page.bounds(for: pdfView.displayBox)
         let annotation = ImageStampAnnotation(image: image, bounds: bounds)
         page.addAnnotation(annotation)
+        recordEdit([annotation])
         scheduleSave()
     }
 
@@ -195,6 +211,7 @@ final class ReaderController {
         annotation.fontColor = .label
         annotation.color = .clear
         page.addAnnotation(annotation)
+        recordEdit([annotation])
         scheduleSave()
     }
 
@@ -207,6 +224,7 @@ final class ReaderController {
             let selection = pdfView.currentSelection
         else { return }
 
+        var added: [PDFAnnotation] = []
         for lineSelection in selection.selectionsByLine() {
             guard let page = lineSelection.pages.first else { continue }
             let bounds = lineSelection.bounds(for: page)
@@ -218,8 +236,10 @@ final class ReaderController {
             annotation.color = .black
             annotation.interiorColor = .black
             page.addAnnotation(annotation)
+            added.append(annotation)
         }
         pdfView.clearSelection()
+        recordEdit(added)
         scheduleSave()
     }
 
@@ -245,11 +265,47 @@ final class ReaderController {
             rotationDegrees: rotationDegrees
         )
         page.addAnnotation(annotation)
+        recordEdit([annotation])
         scheduleSave()
 
         // Snap the reader to the page that just got a signature so the
         // user sees the result immediately.
         pdfView.go(to: page)
+    }
+
+    // MARK: - Undo
+
+    /// Reverts the most recent annotation edit. The Reader's floating undo
+    /// button calls this and observes `canUndo` to know when to show itself.
+    func undoLastEdit() {
+        guard let last = undoStack.popLast() else { return }
+        Haptics.impact(.light)
+
+        for annotation in last {
+            annotation.page?.removeAnnotation(annotation)
+        }
+
+        // PDFView caches each page as a rendered image. In-place
+        // `removeAnnotation` doesn't reliably invalidate that cache, so
+        // the deleted mark stays visible even though it's gone from the
+        // model. Reassigning the same document instance forces a
+        // re-render; restoring the current page keeps the user where
+        // they were. Earlier undo-stack entries still reference valid
+        // page instances because the document instance is unchanged.
+        if let pdfView, let document = pdfView.document {
+            let currentPage = pdfView.currentPage
+            pdfView.document = document
+            if let currentPage {
+                pdfView.go(to: currentPage)
+            }
+        }
+
+        scheduleSave()
+    }
+
+    private func recordEdit(_ annotations: [PDFAnnotation]) {
+        guard !annotations.isEmpty else { return }
+        undoStack.append(annotations)
     }
 
     // MARK: - Save
@@ -302,6 +358,9 @@ final class ReaderController {
     /// Reloads the underlying `PDFView` so the user sees the latest version.
     private func reloadFromExternalChange() {
         guard let pdfView, let url = documentURL else { return }
+        // Annotation references in the undo stack belong to the soon-to-be
+        // replaced PDFDocument, so they'd dangle after the reload.
+        undoStack.removeAll()
         pdfView.document = PDFDocument(url: url)
     }
 }

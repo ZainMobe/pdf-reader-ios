@@ -80,7 +80,14 @@ struct ReaderView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if !isLocked && controller.canUndo {
+                undoFloatingButton
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
         .animation(DesignSystem.Motion.snappy, value: readAloud.state)
+        .animation(DesignSystem.Motion.snappy, value: controller.canUndo)
         .navigationTitle(document.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -400,6 +407,21 @@ struct ReaderView: View {
         } label: {
             Label("View Options", systemImage: "rectangle.grid.1x2")
         }
+    }
+
+    private var undoFloatingButton: some View {
+        Button {
+            controller.undoLastEdit()
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.body.weight(.semibold))
+                .frame(width: 44, height: 44)
+        }
+        .buttonStyle(.glass)
+        .clipShape(Circle())
+        .accessibilityLabel("Undo last edit")
+        .padding(.trailing, DesignSystem.Spacing.m)
+        .padding(.top, DesignSystem.Spacing.s)
     }
 
     private var lockedPlaceholder: some View {
