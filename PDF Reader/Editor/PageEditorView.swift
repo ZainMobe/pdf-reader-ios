@@ -62,6 +62,7 @@ struct PageEditorView: View {
     @ViewBuilder
     private func pageList(_ editor: PageEditor) -> some View {
         let _ = editor.refreshToken
+        let canDelete = editor.pageCount > 1
         List {
             ForEach(0..<editor.pageCount, id: \.self) { index in
                 HStack(spacing: DesignSystem.Spacing.m) {
@@ -70,6 +71,45 @@ struct PageEditorView: View {
                     Text("Page \(index + 1)")
                         .font(.headline)
                     Spacer()
+                    Button {
+                        Haptics.impact(.light)
+                        editor.rotate(at: index)
+                    } label: {
+                        Image(systemName: "rotate.right")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.tint)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Rotate page \(index + 1)")
+
+                    Button(role: .destructive) {
+                        Haptics.impact(.medium)
+                        editor.delete(at: index)
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(canDelete ? AnyShapeStyle(Color.red) : AnyShapeStyle(.tertiary))
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(!canDelete)
+                    .accessibilityLabel("Delete page \(index + 1)")
+                }
+                .contextMenu {
+                    Button {
+                        editor.rotate(at: index)
+                    } label: {
+                        Label("Rotate", systemImage: "rotate.right")
+                    }
+                    Button(role: .destructive) {
+                        editor.delete(at: index)
+                    } label: {
+                        Label("Delete Page", systemImage: "trash")
+                    }
+                    .disabled(!canDelete)
                 }
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) {
@@ -77,6 +117,7 @@ struct PageEditorView: View {
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
+                    .disabled(!canDelete)
                 }
                 .swipeActions(edge: .leading) {
                     Button {
