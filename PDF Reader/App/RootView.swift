@@ -6,10 +6,10 @@ import UIKit
 
 /// Composition root for PDF AI.
 ///
-/// Four tabs (Library, AI, Tools, Settings) plus a floating central
-/// Add FAB that opens an action menu — Scan / Import / New Blank — so
-/// the most common creation flows are one tap away from anywhere in
-/// the app. Adaptive: tab bar on iPhone, sidebar on iPad/Mac via
+/// Five tabs (Library, AI, Add, Tools, Settings). The center Add tab
+/// shows a full destination with the three creation actions —
+/// Scan / Import / New Blank — so they're one tap away from anywhere
+/// in the app. Adaptive: tab bar on iPhone, sidebar on iPad/Mac via
 /// `sidebarAdaptable`.
 struct RootView: View {
     @Environment(\.modelContext) private var modelContext
@@ -17,49 +17,44 @@ struct RootView: View {
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
 
     @State private var selection: Destination = .library
-    @State private var previousSelection: Destination = .library
     @State private var showingImporter = false
     @State private var showingScanner = false
     @State private var showingNewBlank = false
-    @State private var showingAddMenu = false
     @State private var importError: String?
     @State private var isProcessingScan = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            TabView(selection: $selection) {
-                Tab("Library", systemImage: "books.vertical", value: Destination.library) {
-                    LibraryHomeView()
-                }
-                Tab("AI", systemImage: "sparkles", value: Destination.ai) {
-                    AIAssistantView()
-                }
-                // Invisible center placeholder so Library/AI sit on the left
-                // and Tools/Settings sit on the right, with the FAB occupying
-                // the middle slot. Selecting it pops the Add menu and bounces
-                // selection back to the previous tab.
-                Tab("", systemImage: "", value: Destination.add) {
-                    Color.clear
-                }
-                Tab("Tools", systemImage: "wrench.and.screwdriver", value: Destination.tools) {
-                    ToolsHomeView()
-                }
-                Tab("Settings", systemImage: "gearshape", value: Destination.settings) {
-                    SettingsHomeView()
-                }
+        TabView(selection: $selection) {
+            Tab("Library", systemImage: "books.vertical", value: Destination.library) {
+                LibraryHomeView()
             }
-            .tabViewStyle(.sidebarAdaptable)
-            .onChange(of: selection) { oldValue, newValue in
-                if newValue == .add {
-                    selection = oldValue == .add ? previousSelection : oldValue
-                    showingAddMenu = true
-                } else {
-                    previousSelection = newValue
-                }
+            Tab("AI", systemImage: "sparkles", value: Destination.ai) {
+                AIAssistantView()
             }
-
-            addFloatingButton
+            Tab("Add", systemImage: "plus.circle.fill", value: Destination.add) {
+                AddHomeView(
+                    onScan: {
+                        Haptics.impact(.light)
+                        showingScanner = true
+                    },
+                    onImport: {
+                        Haptics.impact(.light)
+                        showingImporter = true
+                    },
+                    onNewBlank: {
+                        Haptics.impact(.light)
+                        showingNewBlank = true
+                    }
+                )
+            }
+            Tab("Tools", systemImage: "wrench.and.screwdriver", value: Destination.tools) {
+                ToolsHomeView()
+            }
+            Tab("Settings", systemImage: "gearshape", value: Destination.settings) {
+                SettingsHomeView()
+            }
         }
+        .tabViewStyle(.sidebarAdaptable)
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: [.pdf],
@@ -106,51 +101,6 @@ struct RootView: View {
         }
     }
 
-    // MARK: - Add FAB
-
-    private var addFloatingButton: some View {
-        Button {
-            Haptics.impact(.light)
-            showingAddMenu = true
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 26, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 60, height: 60)
-                .glassEffect(
-                    .regular.tint(Color.accentColor).interactive(),
-                    in: .circle
-                )
-                .shadow(color: Color.black.opacity(0.18), radius: 8, y: 4)
-        }
-        .accessibilityLabel("Add")
-        .confirmationDialog("Add to Library", isPresented: $showingAddMenu, titleVisibility: .visible) {
-            if VNDocumentCameraViewController.isSupported {
-                Button {
-                    Haptics.impact(.light)
-                    selection = .library
-                    showingScanner = true
-                } label: {
-                    Label("Scan Document", systemImage: "doc.viewfinder")
-                }
-            }
-            Button {
-                Haptics.impact(.light)
-                selection = .library
-                showingImporter = true
-            } label: {
-                Label("Import PDF", systemImage: "square.and.arrow.down")
-            }
-            Button {
-                Haptics.impact(.light)
-                selection = .library
-                showingNewBlank = true
-            } label: {
-                Label("New Blank PDF", systemImage: "doc.badge.plus")
-            }
-        }
-    }
-
     // MARK: - Action handlers
 
     private func handleImport(_ result: Result<[URL], any Error>) {
@@ -192,6 +142,63 @@ struct RootView: View {
 
 private enum Destination: Hashable {
     case library, ai, add, tools, settings
+}
+
+/// Full-screen Add destination with the three creation actions.
+private struct AddHomeView: View {
+    let onScan: () -> Void
+    let onImport: () -> Void
+    let onNewBlank: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("Add to Library") {
+                    if VNDocumentCameraViewController.isSupported {
+                        Button(action: onScan) {
+                            row(
+                                "Scan Document",
+                                systemImage: "doc.viewfinder",
+                                subtitle: "Capture paper documents with OCR"
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Button(action: onImport) {
+                        row(
+                            "Import PDF",
+                            systemImage: "square.and.arrow.down",
+                            subtitle: "Add PDFs from Files or other apps"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    Button(action: onNewBlank) {
+                        row(
+                            "New Blank PDF",
+                            systemImage: "doc.badge.plus",
+                            subtitle: "Create an empty document"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .navigationTitle("Add")
+        }
+    }
+
+    private func row(_ title: String, systemImage: String, subtitle: String) -> some View {
+        HStack(spacing: DesignSystem.Spacing.m) {
+            Image(systemName: systemImage)
+                .font(.title3)
+                .foregroundStyle(.tint)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
+                Text(title).foregroundStyle(.primary)
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+    }
 }
 
 #Preview {
