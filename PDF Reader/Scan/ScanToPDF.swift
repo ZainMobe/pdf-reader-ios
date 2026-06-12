@@ -71,6 +71,7 @@ enum ScanToPDF {
             pageCount: images.count
         )
         document.ocrText = aggregateText.isEmpty ? nil : aggregateText
+        document.thumbnailData = ThumbnailGenerator.persistableThumbnailData(at: destinationURL)
         context.insert(document)
         return document
     }

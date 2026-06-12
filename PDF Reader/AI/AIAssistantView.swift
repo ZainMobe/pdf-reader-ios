@@ -400,6 +400,7 @@ private struct RecentDocumentTile: View {
             DocumentThumbnailView(
                 documentID: document.id,
                 documentURL: document.fileURL,
+                thumbnailData: document.thumbnailData,
                 placeholderIconSize: 24
             )
             .frame(width: 96, height: 124)
@@ -494,6 +495,7 @@ private struct DocumentPickerRow: View {
             DocumentThumbnailView(
                 documentID: document.id,
                 documentURL: document.fileURL,
+                thumbnailData: document.thumbnailData,
                 placeholderIconSize: 20
             )
             .frame(width: 44, height: 56)
@@ -567,6 +569,7 @@ private struct ActionPickerSheet: View {
             DocumentThumbnailView(
                 documentID: document.id,
                 documentURL: document.fileURL,
+                thumbnailData: document.thumbnailData,
                 placeholderIconSize: 22
             )
             .frame(width: 56, height: 72)

@@ -149,6 +149,11 @@ enum DocumentStorage {
             document.ocrText = body
         }
 
+        // Snapshot a first-page thumbnail into the model. Lets the Library
+        // render offline and stay correct even after the PDF gets evicted to
+        // an iCloud placeholder later.
+        document.thumbnailData = ThumbnailGenerator.persistableThumbnailData(at: destinationURL)
+
         context.insert(document)
         return document
     }
@@ -268,5 +273,37 @@ enum SearchableTextBackfill {
             !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return nil }
         return body
+    }
+}
+
+/// One-shot backfill that snapshots a first-page thumbnail into
+/// `Document.thumbnailData` for any document whose thumbnail hasn't been
+/// persisted yet. Without this, the Library has to crack open the PDF on
+/// every launch — which fails offline and for iCloud-placeholder files.
+@MainActor
+enum ThumbnailBackfill {
+    private static var didRun = false
+
+    static func runIfNeeded(in context: ModelContext) async {
+        guard !didRun else { return }
+        didRun = true
+
+        let descriptor = FetchDescriptor<Document>(
+            predicate: #Predicate { $0.thumbnailData == nil }
+        )
+        guard let pending = try? context.fetch(descriptor), !pending.isEmpty else { return }
+
+        for document in pending {
+            if Task.isCancelled { return }
+            let url = document.fileURL
+            await DocumentStorage.ensureDownloaded(at: url)
+            let data = await Task.detached(priority: .utility) {
+                ThumbnailGenerator.persistableThumbnailData(at: url)
+            }.value
+            if let data {
+                document.thumbnailData = data
+            }
+            await Task.yield()
+        }
     }
 }

@@ -10,6 +10,10 @@ import UIKit
 struct DocumentThumbnailView: View {
     let documentID: UUID
     let documentURL: URL
+    /// Optional pre-rendered thumbnail bytes (JPEG) stored on the `Document`
+    /// model. Preferred over live PDFKit rendering because it works offline
+    /// and survives iCloud-placeholder files that haven't been downloaded.
+    var thumbnailData: Data?
     var placeholderIconSize: CGFloat = 32
 
     @State private var image: UIImage?
@@ -48,10 +52,17 @@ struct DocumentThumbnailView: View {
             image = cached
             return
         }
+        // Prefer the persisted thumbnail: it works offline and is independent
+        // of whether the underlying PDF has been downloaded from iCloud.
+        if let data = thumbnailData, let decoded = UIImage(data: data) {
+            ThumbnailCache.shared.set(decoded, for: documentID)
+            image = decoded
+            return
+        }
         let url = documentURL
         let id = documentID
         let generated = await Task.detached(priority: .userInitiated) {
-            await ThumbnailGenerator.thumbnail(at: url, size: ThumbnailCache.targetSize)
+            ThumbnailGenerator.thumbnail(at: url, size: ThumbnailCache.targetSize)
         }.value
         guard let generated else { return }
         ThumbnailCache.shared.set(generated, for: id)
@@ -66,13 +77,23 @@ private struct ThumbnailTaskKey: Hashable {
 
 /// Generates a first-page PDF thumbnail at a chosen size via PDFKit.
 enum ThumbnailGenerator {
-    static func thumbnail(at url: URL, size: CGSize) -> UIImage? {
+    /// Size used for persisted thumbnails. Picked to render crisply across
+    /// grid + list rows without bloating SwiftData / CloudKit payloads.
+    nonisolated static let persistedSize = CGSize(width: 240, height: 320)
+
+    nonisolated static func thumbnail(at url: URL, size: CGSize) -> UIImage? {
         guard
             let pdf = PDFDocument(url: url),
             !pdf.isLocked,
             let page = pdf.page(at: 0)
         else { return nil }
         return page.thumbnail(of: size, for: .cropBox)
+    }
+
+    /// JPEG-encoded first-page thumbnail suitable for storing in
+    /// `Document.thumbnailData`. Returns nil when the PDF isn't readable.
+    nonisolated static func persistableThumbnailData(at url: URL) -> Data? {
+        thumbnail(at: url, size: persistedSize)?.jpegData(compressionQuality: 0.7)
     }
 }
 
@@ -85,7 +106,7 @@ final class ThumbnailCache: @unchecked Sendable {
     @MainActor static let shared = ThumbnailCache()
     /// Size requested from PDFKit. The card and list row downscale this as
     /// needed via `scaledToFit()`.
-    static let targetSize = CGSize(width: 240, height: 320)
+    nonisolated static let targetSize = CGSize(width: 240, height: 320)
 
     private let cache = NSCache<NSUUID, UIImage>()
     private var versions: [UUID: Int] = [:]

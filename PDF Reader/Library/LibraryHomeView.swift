@@ -62,6 +62,7 @@ struct LibraryHomeView: View {
             .task {
                 await DocumentStorage.bootstrapStorage()
                 syncMonitor.start()
+                await ThumbnailBackfill.runIfNeeded(in: modelContext)
                 await SearchableTextBackfill.runIfNeeded(in: modelContext)
             }
             .toolbar {
@@ -545,6 +546,7 @@ private struct DocumentCard: View {
                 DocumentThumbnailView(
                     documentID: document.id,
                     documentURL: document.fileURL,
+                    thumbnailData: document.thumbnailData,
                     placeholderIconSize: 32
                 )
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
@@ -589,6 +591,7 @@ private struct DocumentListRow: View {
             DocumentThumbnailView(
                 documentID: document.id,
                 documentURL: document.fileURL,
+                thumbnailData: document.thumbnailData,
                 placeholderIconSize: 16
             )
             .frame(width: 44, height: 56)
