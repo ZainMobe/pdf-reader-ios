@@ -54,6 +54,7 @@ struct LibraryHomeView: View {
             .navigationTitle(navTitle)
             .searchable(text: $searchText, prompt: "Search title or contents")
             .task {
+                await ICloudMigration.runIfNeeded()
                 await SearchableTextBackfill.runIfNeeded(in: modelContext)
             }
             .toolbar {
