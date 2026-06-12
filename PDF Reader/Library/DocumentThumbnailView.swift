@@ -34,6 +34,10 @@ struct DocumentThumbnailView: View {
                     }
             }
         }
+        .overlay(alignment: .topTrailing) {
+            ICloudSyncBadge(state: ICloudSyncMonitor.shared.state(for: documentID))
+                .padding(DesignSystem.Spacing.xs)
+        }
         .task(id: ThumbnailTaskKey(id: documentID, version: version)) {
             await loadThumbnail()
         }

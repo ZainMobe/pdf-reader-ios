@@ -31,11 +31,17 @@ struct LibraryHomeView: View {
     @State private var showingPaywall = false
 
     private let entitlements = EntitlementStore.shared
+    private let syncMonitor = ICloudSyncMonitor.shared
 
     private let columns = [GridItem(.adaptive(minimum: 180), spacing: DesignSystem.Spacing.l)]
 
     private var viewMode: LibraryViewMode {
         LibraryViewMode(rawValue: libraryViewModeRaw) ?? .grid
+    }
+
+    private var syncStatusText: String {
+        let count = syncMonitor.inProgressCount
+        return count == 1 ? "Syncing 1 document…" : "Syncing \(count) documents…"
     }
 
     var body: some View {
@@ -54,7 +60,8 @@ struct LibraryHomeView: View {
             .navigationTitle(navTitle)
             .searchable(text: $searchText, prompt: "Search title or contents")
             .task {
-                await ICloudMigration.runIfNeeded()
+                await DocumentStorage.bootstrapStorage()
+                syncMonitor.start()
                 await SearchableTextBackfill.runIfNeeded(in: modelContext)
             }
             .toolbar {
@@ -96,17 +103,29 @@ struct LibraryHomeView: View {
                 PaywallView()
             }
             .overlay(alignment: .bottom) {
-                if isProcessingScan {
-                    HStack(spacing: DesignSystem.Spacing.s) {
-                        ProgressView()
-                        Text("Running OCR…")
-                            .font(.footnote)
+                VStack(spacing: DesignSystem.Spacing.s) {
+                    if syncMonitor.inProgressCount > 0 {
+                        HStack(spacing: DesignSystem.Spacing.s) {
+                            ProgressView()
+                            Text(syncStatusText)
+                                .font(.footnote)
+                        }
+                        .padding(.horizontal, DesignSystem.Spacing.l)
+                        .padding(.vertical, DesignSystem.Spacing.m)
+                        .glassEffect(.regular, in: .capsule)
                     }
-                    .padding(.horizontal, DesignSystem.Spacing.l)
-                    .padding(.vertical, DesignSystem.Spacing.m)
-                    .glassEffect(.regular, in: .capsule)
-                    .padding(.bottom, DesignSystem.Spacing.xl)
+                    if isProcessingScan {
+                        HStack(spacing: DesignSystem.Spacing.s) {
+                            ProgressView()
+                            Text("Running OCR…")
+                                .font(.footnote)
+                        }
+                        .padding(.horizontal, DesignSystem.Spacing.l)
+                        .padding(.vertical, DesignSystem.Spacing.m)
+                        .glassEffect(.regular, in: .capsule)
+                    }
                 }
+                .padding(.bottom, DesignSystem.Spacing.xl)
             }
             .alert(
                 "Couldn't add document",

@@ -9,23 +9,71 @@ import SwiftData
 /// `iCloud Drive › PDF Editor`. When iCloud is unavailable (user signed out,
 /// container provisioning failed) it falls back to device-local Application
 /// Support so the app still works.
+///
+/// `pdfStorageDirectory` is intentionally cheap and main-thread safe: it
+/// returns a cached local fallback until `bootstrapStorage()` finishes
+/// resolving the iCloud container on a background thread. Apple's
+/// `url(forUbiquityContainerIdentifier:)` blocks the calling thread during
+/// first-launch provisioning, so we never invoke it from the main thread.
 enum DocumentStorage {
-    private static let ubiquityContainerIdentifier = "iCloud.com.wappltd.PDF-Reader"
+    nonisolated private static let ubiquityContainerIdentifier = "iCloud.com.wappltd.PDF-Reader"
 
-    /// Directory where managed PDF copies live. Resolved once at first
-    /// access; touching this property triggers an iCloud container lookup
-    /// that can briefly block on first launch.
-    static let pdfStorageDirectory: URL = {
-        if let icloud = makeICloudPDFDirectory() {
-            return icloud
-        }
-        return makeLocalPDFDirectory()
-    }()
+    /// Always-available local fallback. Resolved eagerly because
+    /// `FileManager.urls(for:in:)` is cheap and doesn't touch iCloud.
+    nonisolated static let localPDFDirectory: URL = makeLocalPDFDirectory()
+
+    private static let stateLock = NSLock()
+    nonisolated(unsafe) private static var resolvedICloudDirectory: URL?
+    nonisolated(unsafe) private static var didStartBootstrap = false
+
+    /// Active directory for PDF reads and writes. Returns iCloud once
+    /// bootstrap has resolved the ubiquity container, otherwise the local
+    /// fallback. Cheap to call from any thread.
+    static var pdfStorageDirectory: URL {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return resolvedICloudDirectory ?? localPDFDirectory
+    }
 
     /// True when PDFs are being written to iCloud Drive. UI can surface
     /// this so users know whether their library propagates across devices.
     static var isUsingICloud: Bool {
-        pdfStorageDirectory.path.contains("/Mobile Documents/")
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return resolvedICloudDirectory != nil
+    }
+
+    /// Resolves the iCloud container on a background thread, publishes it
+    /// as the active directory, and migrates any pre-iCloud local PDFs into
+    /// it. Idempotent; only the first call does work. Must be called once
+    /// at app startup before any iCloud-aware UI runs.
+    static func bootstrapStorage() async {
+        let shouldRun = stateLock.withLock { () -> Bool in
+            if didStartBootstrap { return false }
+            didStartBootstrap = true
+            return true
+        }
+        guard shouldRun else { return }
+
+        // The identity-token probe is cheap; the container URL resolution is
+        // not. Both are off the main thread for safety.
+        let icloud = await Task.detached(priority: .userInitiated) { () -> URL? in
+            guard FileManager.default.ubiquityIdentityToken != nil else { return nil }
+            return resolveICloudDirectoryBlocking()
+        }.value
+
+        guard let icloud else { return }
+
+        // Switch storage to iCloud first so any imports that happen during
+        // migration land in iCloud directly. Migration sweeps anything left
+        // behind in the local fallback.
+        stateLock.withLock {
+            resolvedICloudDirectory = icloud
+        }
+
+        await Task.detached(priority: .utility) {
+            migrateLocalPDFsIntoICloud(icloudDirectory: icloud)
+        }.value
     }
 
     enum ImportError: Error, LocalizedError {
@@ -127,8 +175,7 @@ enum DocumentStorage {
         }
     }
 
-    private static func makeICloudPDFDirectory() -> URL? {
-        guard FileManager.default.ubiquityIdentityToken != nil else { return nil }
+    nonisolated private static func resolveICloudDirectoryBlocking() -> URL? {
         guard let container = FileManager.default.url(
             forUbiquityContainerIdentifier: ubiquityContainerIdentifier
         ) else { return nil }
@@ -144,7 +191,7 @@ enum DocumentStorage {
         return pdfDir
     }
 
-    private static func makeLocalPDFDirectory() -> URL {
+    nonisolated private static func makeLocalPDFDirectory() -> URL {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -154,10 +201,31 @@ enum DocumentStorage {
         return pdfDir
     }
 
-    fileprivate static func localPDFDirectoryIfPopulated() -> URL? {
-        let local = makeLocalPDFDirectory()
-        let contents = (try? FileManager.default.contentsOfDirectory(at: local, includingPropertiesForKeys: nil)) ?? []
-        return contents.isEmpty ? nil : local
+    /// Sweeps any PDFs sitting in the device-local fallback into iCloud.
+    /// Idempotent: re-running just no-ops once the local directory is empty.
+    nonisolated private static func migrateLocalPDFsIntoICloud(icloudDirectory: URL) {
+        let local = localPDFDirectory
+        let contents = (try? FileManager.default.contentsOfDirectory(
+            at: local,
+            includingPropertiesForKeys: nil
+        )) ?? []
+
+        for source in contents where source.pathExtension.lowercased() == "pdf" {
+            let destination = icloudDirectory.appending(path: source.lastPathComponent)
+            if FileManager.default.fileExists(atPath: destination.path) {
+                try? FileManager.default.removeItem(at: source)
+                continue
+            }
+            // `setUbiquitous` atomically promotes the local file into iCloud.
+            // If it fails (e.g. the file is open elsewhere) we fall back to a
+            // copy so the document at least syncs, even if a stale local copy
+            // is left behind.
+            do {
+                try FileManager.default.setUbiquitous(true, itemAt: source, destinationURL: destination)
+            } catch {
+                try? FileManager.default.copyItem(at: source, to: destination)
+            }
+        }
     }
 }
 
@@ -200,49 +268,5 @@ enum SearchableTextBackfill {
             !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return nil }
         return body
-    }
-}
-
-/// One-shot migration that promotes any pre-iCloud PDFs from the device-local
-/// Application Support directory into the iCloud ubiquity container. Filenames
-/// are UUIDs, so cross-device collisions don't materially matter — if a name
-/// already exists in iCloud the local copy is discarded.
-enum ICloudMigration {
-    private static var didRun = false
-
-    static func runIfNeeded() async {
-        guard !didRun else { return }
-        didRun = true
-        guard DocumentStorage.isUsingICloud else { return }
-        guard let localDirectory = DocumentStorage.localPDFDirectoryIfPopulated() else { return }
-        let icloudDirectory = DocumentStorage.pdfStorageDirectory
-
-        await Task.detached(priority: .utility) {
-            migrate(from: localDirectory, to: icloudDirectory)
-        }.value
-    }
-
-    nonisolated private static func migrate(from localDirectory: URL, to icloudDirectory: URL) {
-        let contents = (try? FileManager.default.contentsOfDirectory(
-            at: localDirectory,
-            includingPropertiesForKeys: nil
-        )) ?? []
-
-        for source in contents where source.pathExtension.lowercased() == "pdf" {
-            let destination = icloudDirectory.appending(path: source.lastPathComponent)
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try? FileManager.default.removeItem(at: source)
-                continue
-            }
-            // `setUbiquitous` atomically promotes the local file into iCloud.
-            // If it fails (e.g. the file is open elsewhere) we fall back to a
-            // copy so the document at least syncs, even if a stale local copy
-            // is left behind.
-            do {
-                try FileManager.default.setUbiquitous(true, itemAt: source, destinationURL: destination)
-            } catch {
-                try? FileManager.default.copyItem(at: source, to: destination)
-            }
-        }
     }
 }
