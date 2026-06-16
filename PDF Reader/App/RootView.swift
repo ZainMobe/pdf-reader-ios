@@ -13,6 +13,7 @@ import UIKit
 /// `sidebarAdaptable`.
 struct RootView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.requestReview) private var requestReview
 
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding: Bool = false
 
@@ -128,6 +129,7 @@ struct RootView: View {
                 do {
                     try await ScanToPDF.createDocument(from: images, in: modelContext)
                     Haptics.success()
+                    ReviewPrompt.requestIfNeeded(using: requestReview)
                 } catch {
                     importError = error.localizedDescription
                 }

@@ -9,6 +9,7 @@ struct LibraryHomeView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.openWindow) private var openWindow
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.requestReview) private var requestReview
     @Query(sort: \Document.addedAt, order: .reverse) private var documents: [Document]
     @Query(sort: \Folder.createdAt, order: .reverse) private var folders: [Folder]
     @Query(sort: \Tag.name) private var tags: [Tag]
@@ -494,6 +495,7 @@ struct LibraryHomeView: View {
                     if let folder = targetFolder {
                         scanned.folder = folder
                     }
+                    ReviewPrompt.requestIfNeeded(using: requestReview)
                 } catch {
                     importError = error.localizedDescription
                 }

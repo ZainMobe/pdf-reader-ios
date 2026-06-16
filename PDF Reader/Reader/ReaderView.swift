@@ -57,6 +57,7 @@ struct ReaderView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.requestReview) private var requestReview
 
     var body: some View {
         Group {
@@ -210,6 +211,7 @@ struct ReaderView: View {
                     onPageAt: trigger.pageIndex
                 )
                 document.isSigned = true
+                ReviewPrompt.requestIfNeeded(using: requestReview)
             }
         }
         .sheet(isPresented: $showingPageEditor) {
