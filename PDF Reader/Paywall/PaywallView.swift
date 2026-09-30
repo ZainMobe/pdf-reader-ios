@@ -85,8 +85,18 @@ struct PaywallView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            if let message = FreeTier.paywallMessage {
+                Text(message)
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(.tint)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, DesignSystem.Spacing.m)
+                    .padding(.vertical, DesignSystem.Spacing.s)
+                    .background(Capsule().fill(.tint.opacity(0.12)))
+            }
         }
         .padding(.top, DesignSystem.Spacing.l)
+        .onDisappear { FreeTier.lastBlocked = nil }
     }
 
     private var featureList: some View {

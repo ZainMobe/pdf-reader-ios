@@ -22,6 +22,17 @@ final class EntitlementStore {
         Task { await refresh() }
     }
 
+    /// Single gate for Pro functionality. Pro users always pass; free users
+    /// pass while their daily allowance for `feature` lasts. When it returns
+    /// false the caller should present the paywall, which reads
+    /// `FreeTier.paywallMessage` to explain the limit.
+    func unlock(_ feature: ProFeature) -> Bool {
+        if isPro { return true }
+        if FreeTier.consume(feature) { return true }
+        FreeTier.lastBlocked = feature
+        return false
+    }
+
     /// Pulls the latest CustomerInfo from RevenueCat and updates state.
     func refresh() async {
         do {

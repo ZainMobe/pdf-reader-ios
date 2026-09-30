@@ -43,6 +43,24 @@ struct SettingsHomeView: View {
                         }
                     }
                 }
+                Section {
+                    ShareLink(
+                        item: AppLinks.appStore,
+                        subject: Text("PDF Editor"),
+                        message: Text("I use PDF Editor to scan, sign and edit PDFs on my iPhone, with on-device AI. Try it:")
+                    ) {
+                        Label("Invite Friends", systemImage: "person.2")
+                    }
+                    Link(destination: AppLinks.writeReview) {
+                        Label("Rate PDF Editor", systemImage: "star")
+                    }
+                } header: {
+                    Text("Spread the word")
+                } footer: {
+                    if !entitlements.isPro {
+                        Text("Free plan: \(FreeTier.remaining(.aiAction)) AI actions, \(FreeTier.remaining(.tool)) Pro tools and \(FreeTier.remaining(.editing)) editing actions left today. Limits reset at midnight.")
+                    }
+                }
                 Section("Sync") {
                     NavigationLink {
                         SyncStatusView()
@@ -118,4 +136,11 @@ struct SettingsHomeView: View {
 
 #Preview {
     SettingsHomeView()
+}
+
+/// Public links for the app. One place to update if the listing moves.
+enum AppLinks {
+    static let appStoreID = "6770882043"
+    static let appStore = URL(string: "https://apps.apple.com/app/id\(appStoreID)")!
+    static let writeReview = URL(string: "https://apps.apple.com/app/id\(appStoreID)?action=write-review")!
 }

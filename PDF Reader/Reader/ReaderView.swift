@@ -57,8 +57,15 @@ struct ReaderView: View {
     @State private var redactionError: String?
     @State private var redactionResultMessage: String?
     @State private var pdfReloadToken = UUID()
-    @State private var controller = ReaderController()
+    @State private var controller: ReaderController
     @State private var readAloud = ReadAloud()
+
+    init(document: Document) {
+        _document = Bindable(wrappedValue: document)
+        let controller = ReaderController()
+        controller.initialPageIndex = document.lastPageIndex
+        _controller = State(initialValue: controller)
+    }
 
     private let model = SystemLanguageModel.default
     private let entitlements = EntitlementStore.shared
@@ -167,6 +174,11 @@ struct ReaderView: View {
         } message: {
             Text(redactionError ?? "")
         }
+        .onAppear {
+            controller.onPageChanged = { [document] index in
+                if document.lastPageIndex != index { document.lastPageIndex = index }
+            }
+        }
         .preferredColorScheme(readerTheme.prefersDarkChrome ? .dark : nil)
         .sheet(isPresented: $showingReflow) {
             ReflowReaderView(document: document, startPage: controller.currentPageIndex ?? 0) { page in
@@ -214,7 +226,7 @@ struct ReaderView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    gated { showingSignatureSheet = true }
+                    gated(.signing) { showingSignatureSheet = true }
                 } label: {
                     proLabel("Sign", systemImage: "signature")
                 }
@@ -455,27 +467,27 @@ struct ReaderView: View {
     private var aiMenu: some View {
         Menu {
             Button {
-                gated { showingSummary = true }
+                gated(.aiAction) { showingSummary = true }
             } label: {
                 proItem("Summarize", systemImage: "text.alignleft")
             }
             Button {
-                gated { showingChat = true }
+                gated(.aiAction) { showingChat = true }
             } label: {
                 proItem("Chat with PDF", systemImage: "message")
             }
             Button {
-                gated { showingTranslate = true }
+                gated(.aiAction) { showingTranslate = true }
             } label: {
                 proItem("Translate", systemImage: "character.bubble")
             }
             Button {
-                gated { showingExtract = true }
+                gated(.aiAction) { showingExtract = true }
             } label: {
                 proItem("Extract Data", systemImage: "tablecells")
             }
             Button {
-                gated { showingFormFill = true }
+                gated(.aiAction) { showingFormFill = true }
             } label: {
                 proItem("Auto-Fill Form", systemImage: "checklist")
             }
@@ -650,8 +662,8 @@ struct ReaderView: View {
     }
 
     /// Runs `action` if the user is Pro, otherwise presents the paywall.
-    private func gated(_ action: () -> Void) {
-        if entitlements.isPro {
+    private func gated(_ feature: ProFeature = .editing, _ action: () -> Void) {
+        if entitlements.unlock(feature) {
             action()
         } else {
             showingPaywall = true
@@ -665,7 +677,7 @@ struct ReaderView: View {
         if entitlements.isPro {
             Label(title, systemImage: systemImage)
         } else {
-            Label("\(title) (Pro)", systemImage: systemImage)
+            Label("\(title) \(FreeTier.suffix(for: .editing))", systemImage: systemImage)
         }
     }
 

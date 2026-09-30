@@ -31,6 +31,14 @@ final class ReaderController {
     /// Drives the visibility of the Reader's floating undo button.
     var canUndo: Bool { !undoStack.isEmpty }
 
+    /// Page to restore when the view first attaches (reading position).
+    /// A router `pageToOpen` (citation, widget link) takes precedence.
+    var initialPageIndex: Int?
+
+    /// Fires with the new page index whenever the visible page changes.
+    var onPageChanged: ((Int) -> Void)?
+    private var pageObserver: NSObjectProtocol?
+
     func attach(pdfView: PDFView, documentURL: URL, documentID: UUID) {
         self.pdfView = pdfView
         self.documentID = documentID
@@ -38,8 +46,26 @@ final class ReaderController {
         let router = IncomingFileRouter.shared
         if let page = router.pageToOpen, router.documentToOpen == nil, pdfView.document != nil {
             router.pageToOpen = nil
+            initialPageIndex = nil
             DispatchQueue.main.async { [weak self] in
                 self?.goToPage(page)
+            }
+        } else if let page = initialPageIndex, pdfView.document != nil {
+            initialPageIndex = nil
+            if page > 0 {
+                DispatchQueue.main.async { [weak self] in
+                    self?.goToPage(page)
+                }
+            }
+        }
+        if pageObserver == nil {
+            pageObserver = NotificationCenter.default.addObserver(
+                forName: .PDFViewPageChanged, object: pdfView, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, let index = self.currentPageIndex else { return }
+                    self.onPageChanged?(index)
+                }
             }
         }
         if self.documentURL != documentURL {
@@ -63,6 +89,10 @@ final class ReaderController {
             NSFileCoordinator.removeFilePresenter(presenter)
         }
         presenter = nil
+        if let pageObserver {
+            NotificationCenter.default.removeObserver(pageObserver)
+        }
+        pageObserver = nil
     }
 
     /// Page index of the currently displayed page, or `nil` if nothing's loaded.

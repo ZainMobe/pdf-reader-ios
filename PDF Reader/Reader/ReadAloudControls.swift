@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// Glass mini-player pinned to the bottom of the Reader while read-aloud is
@@ -40,6 +41,50 @@ struct ReadAloudControls: View {
                     .foregroundStyle(.secondary)
             }
 
+            Menu {
+                Section("Speed") {
+                    ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { value in
+                        Button {
+                            aloud.speed = value
+                        } label: {
+                            if abs(aloud.speed - value) < 0.01 {
+                                Label(speedLabel(value), systemImage: "checkmark")
+                            } else {
+                                Text(speedLabel(value))
+                            }
+                        }
+                    }
+                }
+                Section("Voice") {
+                    Button {
+                        aloud.voiceIdentifier = nil
+                    } label: {
+                        if aloud.voiceIdentifier == nil {
+                            Label("Automatic", systemImage: "checkmark")
+                        } else {
+                            Text("Automatic")
+                        }
+                    }
+                    ForEach(aloud.availableVoices.prefix(12), id: \.identifier) { voice in
+                        Button {
+                            aloud.voiceIdentifier = voice.identifier
+                        } label: {
+                            if aloud.voiceIdentifier == voice.identifier {
+                                Label(voiceLabel(voice), systemImage: "checkmark")
+                            } else {
+                                Text(voiceLabel(voice))
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Text(speedLabel(aloud.speed))
+                    .font(.caption.weight(.semibold).monospacedDigit())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(.fill.tertiary))
+            }
+
             Button {
                 aloud.stop()
             } label: {
@@ -53,5 +98,19 @@ struct ReadAloudControls: View {
         .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.large))
         .padding(.horizontal, DesignSystem.Spacing.l)
         .padding(.bottom, DesignSystem.Spacing.l)
+    }
+
+    private func speedLabel(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...2))) + "x"
+    }
+
+    private func voiceLabel(_ voice: AVSpeechSynthesisVoice) -> String {
+        let quality: String
+        switch voice.quality {
+        case .premium: quality = " (Premium)"
+        case .enhanced: quality = " (Enhanced)"
+        default: quality = ""
+        }
+        return voice.name + quality
     }
 }

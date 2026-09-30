@@ -212,12 +212,12 @@ struct ToolsHomeView: View {
         if entitlements.isPro {
             row(title, systemImage: systemImage, subtitle: subtitle)
         } else {
-            row("\(title) (Pro)", systemImage: systemImage, subtitle: subtitle)
+            row("\(title) \(FreeTier.suffix(for: .tool))", systemImage: systemImage, subtitle: subtitle)
         }
     }
 
     private func gated(_ action: () -> Void) {
-        if entitlements.isPro {
+        if entitlements.unlock(.tool) {
             action()
         } else {
             showingPaywall = true

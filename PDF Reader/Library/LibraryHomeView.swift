@@ -361,7 +361,7 @@ struct LibraryHomeView: View {
                 Text("No titles or contents match. Ask AI to search inside every document instead.")
             } actions: {
                 Button {
-                    if entitlements.isPro { showingAskLibrary = true } else { showingPaywall = true }
+                    if entitlements.unlock(.aiAction) { showingAskLibrary = true } else { showingPaywall = true }
                 } label: {
                     Label("Ask your Library", systemImage: "sparkle.magnifyingglass")
                 }

@@ -165,7 +165,7 @@ struct AIAssistantView: View {
     /// Entry point for cross-document search and answers.
     private var askLibraryCard: some View {
         Button {
-            if entitlements.isPro {
+            if entitlements.unlock(.aiAction) {
                 showingAskLibrary = true
             } else {
                 showingPaywall = true
@@ -213,7 +213,7 @@ struct AIAssistantView: View {
                     Button {
                         tap(action: action)
                     } label: {
-                        AIActionCard(action: action, locked: !entitlements.isPro)
+                        AIActionCard(action: action, locked: !entitlements.isPro && FreeTier.remaining(.aiAction) == 0)
                     }
                     .buttonStyle(.plain)
                 }
@@ -282,7 +282,7 @@ struct AIAssistantView: View {
 
     private func tap(action: AIAction) {
         Haptics.impact(.light)
-        guard entitlements.isPro else {
+        guard entitlements.unlock(.aiAction) else {
             showingPaywall = true
             return
         }
@@ -291,7 +291,7 @@ struct AIAssistantView: View {
 
     private func tap(document: Document) {
         Haptics.impact(.light)
-        guard entitlements.isPro else {
+        guard entitlements.unlock(.aiAction) else {
             showingPaywall = true
             return
         }

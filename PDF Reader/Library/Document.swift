@@ -16,6 +16,9 @@ final class Document {
     var isUnread: Bool = true
     var isSigned: Bool = false
     var thumbnailData: Data?
+    /// Last page the user was on (0-based). Restored when the document is
+    /// reopened; synced with the rest of the record.
+    var lastPageIndex: Int = 0
 
     /// Plain-text content extracted at scan/import time. Used as a fallback
     /// for AI summarization when the PDF itself has no embedded text (e.g.
