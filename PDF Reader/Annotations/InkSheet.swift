@@ -81,7 +81,7 @@ struct InkSheet: View {
 
     private func renderPage() {
         guard
-            let pdf = PDFDocument(url: document.fileURL),
+            let pdf = PDFDocument.opened(at: document.fileURL),
             let page = pdf.page(at: pageIndex)
         else { return }
         let bounds = page.bounds(for: .cropBox)

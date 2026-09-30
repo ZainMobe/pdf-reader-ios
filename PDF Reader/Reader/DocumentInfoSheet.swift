@@ -95,7 +95,7 @@ struct DocumentInfoSheet: View {
     private func loadAttributes() {
         defer { loaded = true }
         guard
-            let pdf = PDFDocument(url: document.fileURL),
+            let pdf = PDFDocument.opened(at: document.fileURL),
             let attrs = pdf.documentAttributes
         else { return }
 

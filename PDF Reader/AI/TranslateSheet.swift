@@ -346,13 +346,13 @@ private struct TranslatedPreview: UIViewRepresentable {
         view.displayMode = .singlePageContinuous
         view.displayDirection = .vertical
         view.backgroundColor = .clear
-        view.document = PDFDocument(url: url)
+        view.document = PDFDocument.opened(at: url)
         return view
     }
 
     func updateUIView(_ view: PDFView, context: Context) {
         if view.document?.documentURL != url {
-            view.document = PDFDocument(url: url)
+            view.document = PDFDocument.opened(at: url)
         }
     }
 }

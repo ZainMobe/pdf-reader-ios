@@ -14,6 +14,8 @@ enum PDFOperations {
         case invalidPageCount
         case invalidSplitPoint
         case compressionDidNotShrink
+        case incorrectPassword
+        case notEncrypted
 
         var errorDescription: String? {
             switch self {
@@ -23,12 +25,16 @@ enum PDFOperations {
             case .invalidPageCount: "Page count must be at least 1."
             case .invalidSplitPoint: "Pick a split point inside the document."
             case .compressionDidNotShrink: "This PDF is already efficiently compressed — most of its size comes from embedded text, so rasterizing pages would make the file larger. Pick a higher quality if you only need to flatten annotations, or skip compression for this file."
+            case .incorrectPassword: "That password didn't open the PDF. Check it and try again."
+            case .notEncrypted: "This PDF isn't password-protected — there's nothing to remove."
             }
         }
     }
 
-    /// Throws `sourceEncrypted` when a tool tries to operate on a locked PDF.
-    /// All file-level operations call this right after `PDFDocument(url:)`.
+    /// Throws `sourceEncrypted` when a tool tries to operate on a PDF that is
+    /// still locked. All file-level operations call this right after
+    /// `PDFDocument.opened(at:)`, which has already applied a password the user
+    /// entered earlier — so this only fires for documents we've never unlocked.
     private static func ensureUnlocked(_ pdf: PDFDocument) throws {
         if pdf.isLocked { throw OpError.sourceEncrypted }
     }
@@ -136,7 +142,7 @@ enum PDFOperations {
         let merged = PDFDocument()
         var insertIndex = 0
         for doc in documents {
-            guard let pdf = PDFDocument(url: doc.fileURL) else { continue }
+            guard let pdf = PDFDocument.opened(at: doc.fileURL) else { continue }
             if pdf.isLocked { throw OpError.sourceEncrypted }
             for pageIndex in 0..<pdf.pageCount {
                 guard
@@ -181,7 +187,7 @@ enum PDFOperations {
         in context: ModelContext
     ) throws -> Document {
         guard
-            let pdf = PDFDocument(url: source.fileURL),
+            let pdf = PDFDocument.opened(at: source.fileURL),
             let firstPage = pdf.page(at: 0)
         else {
             throw OpError.noSourceDocument
@@ -296,7 +302,7 @@ enum PDFOperations {
         drawOverlay: (_ pageRect: CGRect, _ pageIndex: Int, _ totalPages: Int) -> Void
     ) throws -> Document {
         guard
-            let pdf = PDFDocument(url: source.fileURL),
+            let pdf = PDFDocument.opened(at: source.fileURL),
             let firstPage = pdf.page(at: 0)
         else {
             throw OpError.noSourceDocument
@@ -383,7 +389,7 @@ enum PDFOperations {
         atPage splitAfter: Int,
         in context: ModelContext
     ) throws -> (firstPart: Document, secondPart: Document) {
-        guard let pdf = PDFDocument(url: source.fileURL) else { throw OpError.noSourceDocument }
+        guard let pdf = PDFDocument.opened(at: source.fileURL) else { throw OpError.noSourceDocument }
         try ensureUnlocked(pdf)
         guard splitAfter > 0, splitAfter < pdf.pageCount else { throw OpError.invalidSplitPoint }
 
@@ -438,4 +444,73 @@ enum PDFOperations {
         context.insert(secondDoc)
         return (firstDoc, secondDoc)
     }
+
+    // MARK: - Remove password
+
+    /// Writes a decrypted copy of `source`, given its password.
+    ///
+    /// The copy is built page-by-page into a brand-new `PDFDocument` rather than
+    /// re-saving the unlocked original. `PDFDocument.write(to:)` keeps the
+    /// source's encryption dictionary, so the "unlocked" file it produces is
+    /// still locked — that is precisely the bug that used to trap the Reader in
+    /// a password loop. Copying pages into a fresh document leaves the
+    /// encryption behind for good.
+    ///
+    /// The original is left untouched, exactly like every other tool here.
+    @discardableResult
+    static func removePassword(
+        _ source: Document,
+        password: String,
+        in context: ModelContext
+    ) throws -> Document {
+        guard let pdf = PDFDocument(url: source.fileURL) else {
+            throw OpError.noSourceDocument
+        }
+        guard pdf.isLocked else { throw OpError.notEncrypted }
+        guard pdf.unlock(withPassword: password) else { throw OpError.incorrectPassword }
+
+        let decrypted = PDFDocument()
+        for index in 0..<pdf.pageCount {
+            guard
+                let page = pdf.page(at: index),
+                let copy = page.copy() as? PDFPage
+            else { continue }
+            decrypted.insert(copy, at: decrypted.pageCount)
+        }
+        guard decrypted.pageCount > 0 else { throw OpError.noSourceDocument }
+
+        // Carry the title/author/subject metadata across.
+        if let attributes = pdf.documentAttributes {
+            decrypted.documentAttributes = attributes
+        }
+
+        let newID = UUID()
+        let filename = "\(newID.uuidString).pdf"
+        let url = DocumentStorage.pdfStorageDirectory.appending(path: filename)
+        guard decrypted.write(to: url) else { throw OpError.writeFailed }
+
+        // The user just proved they know the original's password; remember it so
+        // the source opens without another prompt too.
+        DocumentPasswordStore.store(password, for: source.fileURL)
+
+        let size = (try? FileManager.default
+            .attributesOfItem(atPath: url.path)[.size] as? Int64) ?? 0
+
+        let document = Document(
+            id: newID,
+            title: "\(source.title) (Unlocked)",
+            filename: filename,
+            fileSize: size,
+            pageCount: decrypted.pageCount
+        )
+        context.insert(document)
+        return document
+    }
+
+    /// True when `document` needs a password before it can be read — used by the
+    /// Remove Password tool to mark which library entries are worth picking.
+    static func isPasswordProtected(_ document: Document) -> Bool {
+        PDFDocument(url: document.fileURL)?.isLocked ?? false
+    }
 }
+

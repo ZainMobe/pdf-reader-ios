@@ -107,7 +107,7 @@ final class DocumentChat {
     }
 
     private static func extractText(_ document: Document) -> String {
-        if let pdf = PDFDocument(url: document.fileURL),
+        if let pdf = PDFDocument.opened(at: document.fileURL),
            let body = pdf.string,
            !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return body

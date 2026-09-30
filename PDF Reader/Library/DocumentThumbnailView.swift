@@ -83,7 +83,7 @@ enum ThumbnailGenerator {
 
     nonisolated static func thumbnail(at url: URL, size: CGSize) -> UIImage? {
         guard
-            let pdf = PDFDocument(url: url),
+            let pdf = PDFDocument.opened(at: url),
             !pdf.isLocked,
             let page = pdf.page(at: 0)
         else { return nil }

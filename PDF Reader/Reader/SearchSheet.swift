@@ -40,7 +40,7 @@ struct SearchSheet: View {
             }
             .task {
                 if pdf == nil {
-                    pdf = PDFDocument(url: document.fileURL)
+                    pdf = PDFDocument.opened(at: document.fileURL)
                 }
             }
         }

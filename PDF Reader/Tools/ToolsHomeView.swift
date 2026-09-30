@@ -5,7 +5,7 @@ import VisionKit
 /// ToolsHomeView — hub of file-level PDF operations.
 ///
 /// Free: Scan, New Blank PDF.
-/// Pro: Merge, Split.
+/// Pro: Merge, Split, Watermark, Page Numbers, Remove Password, Compress.
 struct ToolsHomeView: View {
     @Environment(\.modelContext) private var modelContext
 
@@ -18,7 +18,7 @@ struct ToolsHomeView: View {
     private let entitlements = EntitlementStore.shared
 
     enum ToolSheet: Identifiable {
-        case newBlank, merge, split, watermark, pageNumbers, compress
+        case newBlank, merge, split, watermark, pageNumbers, compress, removePassword
         var id: Self { self }
     }
 
@@ -69,6 +69,18 @@ struct ToolsHomeView: View {
                     }
                     .buttonStyle(.plain)
                 }
+                Section("Security") {
+                    Button {
+                        gated { activeSheet = .removePassword }
+                    } label: {
+                        proRow(
+                            "Remove Password",
+                            systemImage: "lock.open",
+                            subtitle: "Save an unlocked copy of a protected PDF"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
                 Section("Optimize") {
                     Button {
                         gated { activeSheet = .compress }
@@ -99,6 +111,7 @@ struct ToolsHomeView: View {
                 case .watermark: WatermarkView()
                 case .pageNumbers: PageNumbersView()
                 case .compress: CompressView()
+                case .removePassword: RemovePasswordView()
                 }
             }
             .fullScreenCover(isPresented: $showingScanner) {

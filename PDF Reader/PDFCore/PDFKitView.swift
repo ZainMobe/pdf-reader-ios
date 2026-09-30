@@ -22,7 +22,7 @@ struct PDFKitView: UIViewRepresentable {
         let view = PDFView()
         view.autoScales = true
         view.backgroundColor = .clear
-        view.document = PDFDocument(url: url)
+        view.document = PDFDocument.opened(at: url)
         view.displayMode = displayMode
         view.displayDirection = displayDirection
         applyPageViewController(to: view)
@@ -32,7 +32,7 @@ struct PDFKitView: UIViewRepresentable {
 
     func updateUIView(_ view: PDFView, context: Context) {
         if view.document?.documentURL != url {
-            view.document = PDFDocument(url: url)
+            view.document = PDFDocument.opened(at: url)
         }
         let modeChanged = view.displayMode != displayMode
         let directionChanged = view.displayDirection != displayDirection

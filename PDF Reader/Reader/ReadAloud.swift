@@ -27,7 +27,7 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func start(document: Document, fromPage pageIndex: Int) {
-        guard let pdf = PDFDocument(url: document.fileURL) else { return }
+        guard let pdf = PDFDocument.opened(at: document.fileURL) else { return }
         pages = (0..<pdf.pageCount).map { pdf.page(at: $0)?.string ?? "" }
         totalPages = pages.count
         currentPageIndex = min(max(0, pageIndex), max(0, totalPages - 1))

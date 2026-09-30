@@ -336,6 +336,16 @@ final class ReaderController {
             let url = documentURL
         else { return }
 
+        // PDFKit writes an unencrypted file by default, so saving an annotation
+        // onto a protected PDF would silently strip its password. Re-apply the
+        // password we hold for it; removing protection stays an explicit choice
+        // in Tools -> Remove Password.
+        var writeOptions: [PDFDocumentWriteOption: Any] = [:]
+        if let password = DocumentPasswordStore.password(for: url) {
+            writeOptions[.userPasswordOption] = password
+            writeOptions[.ownerPasswordOption] = password
+        }
+
         let coordinator = NSFileCoordinator(filePresenter: presenter)
         var coordinationError: NSError?
         coordinator.coordinate(
@@ -343,7 +353,11 @@ final class ReaderController {
             options: .forReplacing,
             error: &coordinationError
         ) { coordinatedURL in
-            document.write(to: coordinatedURL)
+            if writeOptions.isEmpty {
+                document.write(to: coordinatedURL)
+            } else {
+                document.write(to: coordinatedURL, withOptions: writeOptions)
+            }
         }
 
         // The first page may now look different (signature, ink, highlight,
@@ -361,7 +375,7 @@ final class ReaderController {
         // Annotation references in the undo stack belong to the soon-to-be
         // replaced PDFDocument, so they'd dangle after the reload.
         undoStack.removeAll()
-        pdfView.document = PDFDocument(url: url)
+        pdfView.document = PDFDocument.opened(at: url)
     }
 }
 

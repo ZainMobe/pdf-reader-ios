@@ -107,6 +107,8 @@ enum DocumentStorage {
 
         context.delete(document)
         try? FileManager.default.removeItem(at: url)
+        // Don't leave the document's password behind in the Keychain.
+        DocumentPasswordStore.remove(for: url)
     }
 
     /// Copies the file at `sourceURL` into the app's PDF storage and inserts a
@@ -128,7 +130,7 @@ enum DocumentStorage {
 
         let fileSize = (try? FileManager.default
             .attributesOfItem(atPath: destinationURL.path)[.size] as? Int64) ?? 0
-        let pdfDocument = PDFDocument(url: destinationURL)
+        let pdfDocument = PDFDocument.opened(at: destinationURL)
         let pageCount = pdfDocument?.pageCount ?? 0
         let title = sourceURL.deletingPathExtension().lastPathComponent
 
@@ -267,7 +269,7 @@ enum SearchableTextBackfill {
 
     nonisolated private static func extractText(at url: URL) -> String? {
         guard
-            let pdf = PDFDocument(url: url),
+            let pdf = PDFDocument.opened(at: url),
             !pdf.isLocked,
             let body = pdf.string,
             !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

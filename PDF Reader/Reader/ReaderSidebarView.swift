@@ -108,7 +108,7 @@ private struct ThumbnailList: View {
             .padding(DesignSystem.Spacing.l)
         }
         .task {
-            if let pdf = PDFDocument(url: documentURL) {
+            if let pdf = PDFDocument.opened(at: documentURL) {
                 pages = (0..<pdf.pageCount).compactMap { pdf.page(at: $0) }
             }
         }
@@ -141,7 +141,7 @@ private struct OutlineList: View {
             }
         }
         .task {
-            outline = PDFDocument(url: documentURL)?.outlineRoot
+            outline = PDFDocument.opened(at: documentURL)?.outlineRoot
             loaded = true
         }
     }
@@ -304,7 +304,7 @@ private struct AnnotationsList: View {
     }
 
     private func load() {
-        guard let pdf = PDFDocument(url: documentURL) else {
+        guard let pdf = PDFDocument.opened(at: documentURL) else {
             loaded = true
             return
         }

@@ -6,7 +6,7 @@ import PDFKit
 /// sheet over it.
 enum AnnotationExporter {
     static func export(_ document: Document) -> URL? {
-        guard let pdf = PDFDocument(url: document.fileURL) else { return nil }
+        guard let pdf = PDFDocument.opened(at: document.fileURL) else { return nil }
 
         var markdown = "# \(document.title)\n\n"
         markdown += "_Annotations exported on \(Date.now.formatted(date: .long, time: .shortened))._\n\n"

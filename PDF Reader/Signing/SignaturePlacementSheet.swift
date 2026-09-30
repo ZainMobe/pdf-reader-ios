@@ -237,7 +237,7 @@ struct SignaturePlacementSheet: View {
         let idx = pageIndex
         let result: (CGSize, UIImage?)? = await Task.detached(priority: .userInitiated) {
             guard
-                let pdf = PDFDocument(url: url),
+                let pdf = PDFDocument.opened(at: url),
                 let page = pdf.page(at: idx)
             else { return nil }
             let bounds = page.bounds(for: .cropBox)
@@ -254,7 +254,7 @@ struct SignaturePlacementSheet: View {
 
     private func commit() {
         guard
-            let pdf = PDFDocument(url: document.fileURL),
+            let pdf = PDFDocument.opened(at: document.fileURL),
             let page = pdf.page(at: pageIndex)
         else {
             dismiss()

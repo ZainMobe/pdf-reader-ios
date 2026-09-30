@@ -440,8 +440,13 @@ struct ReaderView: View {
         }
     }
 
+    /// Decides whether the reader has to ask for a password.
+    ///
+    /// `PDFDocument.opened(at:)` already applies a password we accepted on a
+    /// previous open, so a document the user has unlocked before comes back
+    /// unlocked and the prompt never appears again.
     private func checkLockStatus() {
-        guard let pdf = PDFDocument(url: document.fileURL) else { return }
+        guard let pdf = PDFDocument.opened(at: document.fileURL) else { return }
         if pdf.isLocked {
             isLocked = true
             passwordError = nil
@@ -451,23 +456,30 @@ struct ReaderView: View {
         }
     }
 
+    /// Validates a typed password and remembers it.
+    ///
+    /// Earlier builds rewrote the file with `write(to:)` here. PDFKit does not
+    /// reliably drop the encryption dictionary on that path, so the document was
+    /// still locked when the view reloaded, `checkLockStatus()` fired again, and
+    /// the prompt reappeared forever without the PDF ever opening.
+    ///
+    /// Now the password goes to the Keychain and the file is left exactly as it
+    /// is. Stripping the protection permanently is a separate, explicit action:
+    /// Tools -> Remove Password.
     private func attemptUnlock(with password: String) {
         guard let pdf = PDFDocument(url: document.fileURL) else {
             passwordError = "Couldn't open document."
             return
         }
-        if pdf.unlock(withPassword: password) {
-            if pdf.write(to: document.fileURL) {
-                isLocked = false
-                passwordError = nil
-                showingPasswordSheet = false
-                pdfReloadToken = UUID()
-            } else {
-                passwordError = "Couldn't save unlocked document."
-            }
-        } else {
+        guard pdf.unlock(withPassword: password) else {
             passwordError = "Incorrect password. Try again."
+            return
         }
+        DocumentPasswordStore.store(password, for: document.fileURL)
+        isLocked = false
+        passwordError = nil
+        showingPasswordSheet = false
+        pdfReloadToken = UUID()
     }
 
     private func startInk() {

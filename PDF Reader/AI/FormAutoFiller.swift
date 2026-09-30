@@ -41,7 +41,7 @@ final class FormAutoFiller {
 
         task = Task { [weak self] in
             guard let self else { return }
-            guard let pdf = PDFDocument(url: url) else {
+            guard let pdf = PDFDocument.opened(at: url) else {
                 self.state = .failed("Couldn't open document.")
                 return
             }
@@ -131,7 +131,7 @@ final class FormAutoFiller {
     /// matching text widgets, and saving via `PDFDocument.write(to:)`.
     func apply(to documentURL: URL) {
         state = .applying
-        guard let pdf = PDFDocument(url: documentURL) else {
+        guard let pdf = PDFDocument.opened(at: documentURL) else {
             state = .failed("Couldn't reopen document.")
             return
         }

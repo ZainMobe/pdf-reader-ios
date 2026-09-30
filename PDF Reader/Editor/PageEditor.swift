@@ -29,7 +29,7 @@ final class PageEditor {
     let isEncrypted: Bool
 
     init?(url: URL) {
-        guard let pdf = PDFDocument(url: url) else { return nil }
+        guard let pdf = PDFDocument.opened(at: url) else { return nil }
         self.originalURL = url
         self.document = pdf
         self.isEncrypted = pdf.isLocked

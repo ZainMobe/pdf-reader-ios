@@ -77,7 +77,7 @@ final class DocumentSummarizer {
     }
 
     private static func extractText(at url: URL, fallback: String?) -> String {
-        if let pdf = PDFDocument(url: url),
+        if let pdf = PDFDocument.opened(at: url),
            let body = pdf.string,
            !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return body

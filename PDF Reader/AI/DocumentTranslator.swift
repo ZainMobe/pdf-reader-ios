@@ -47,7 +47,7 @@ final class DocumentTranslator {
         let runID = String(UUID().uuidString.prefix(8))
         translatorLog.notice("[\(runID, privacy: .public)] translate start: doc=\(document.title, privacy: .public) size=\(document.fileSize) language=\(language.displayName, privacy: .public)")
 
-        guard let pdf = PDFDocument(url: sourceURL) else {
+        guard let pdf = PDFDocument.opened(at: sourceURL) else {
             translatorLog.error("[\(runID, privacy: .public)] PDFDocument(url:) returned nil for \(sourceURL.lastPathComponent, privacy: .public)")
             state = .failed("Couldn't read the source PDF.")
             return
@@ -205,7 +205,7 @@ final class DocumentTranslator {
             fileSize: fileSize,
             pageCount: pageCount
         )
-        if let pdf = PDFDocument(url: destination), let body = pdf.string {
+        if let pdf = PDFDocument.opened(at: destination), let body = pdf.string {
             document.ocrText = body
         }
         context.insert(document)
@@ -253,7 +253,7 @@ final class DocumentTranslator {
         pageCount: Int,
         runID: String
     ) -> [[LineInfo]] {
-        guard let pdf = PDFDocument(url: sourceURL) else {
+        guard let pdf = PDFDocument.opened(at: sourceURL) else {
             translatorLog.error("[\(runID, privacy: .public)] extractAllPageLines: PDFDocument init failed")
             return []
         }
@@ -474,7 +474,7 @@ final class DocumentTranslator {
         destinationURL: URL,
         runID: String
     ) -> (url: URL, pageCount: Int)? {
-        guard let pdf = PDFDocument(url: sourceURL), pdf.pageCount > 0 else {
+        guard let pdf = PDFDocument.opened(at: sourceURL), pdf.pageCount > 0 else {
             translatorLog.error("[\(runID, privacy: .public)] renderPDF: failed to open source PDF")
             return nil
         }
