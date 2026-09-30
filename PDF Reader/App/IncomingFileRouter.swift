@@ -46,6 +46,19 @@ final class IncomingFileRouter {
     /// Number of files currently being staged/imported (for a progress pill).
     var inFlightCount: Int = 0
 
+    /// App-level actions requested from outside the UI (Quick Actions,
+    /// Shortcuts, widgets, `pdfeditor://` links). RootView consumes them.
+    enum AppAction: Equatable {
+        case scan
+        case importFiles
+        case newBlank
+        case askLibrary(query: String)
+        case openTools
+    }
+
+    /// Pending action; RootView clears it once handled.
+    var pendingAction: AppAction?
+
     private var container: ModelContainer?
     private var bannerDismissTask: Task<Void, Never>?
     /// Files that arrived before `configure(container:)`; replayed once the
@@ -442,13 +455,35 @@ final class IncomingFileRouter {
     /// `pdfeditor://inbox` re-sweeps the shared inbox; `pdfeditor://library`
     /// shows the Library. Unknown paths are ignored. Reserved for widgets
     /// and Shortcuts in later steps.
-    private func handleAppScheme(_ url: URL) {
+    func handleAppScheme(_ url: URL) {
+        let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let query = components?.queryItems?.first(where: { $0.name == "q" })?.value ?? ""
         switch url.host()?.lowercased() {
         case "inbox":
             sweepSharedInbox()
             libraryRequestToken &+= 1
         case "library":
             libraryRequestToken &+= 1
+        case "scan":
+            pendingAction = .scan
+        case "import":
+            pendingAction = .importFiles
+        case "new":
+            pendingAction = .newBlank
+        case "ask":
+            pendingAction = .askLibrary(query: query)
+        case "tools":
+            pendingAction = .openTools
+        case "document":
+            // pdfeditor://document/<uuid>?page=<n>
+            if let id = url.pathComponents.dropFirst().first.flatMap(UUID.init) {
+                if let pageText = components?.queryItems?.first(where: { $0.name == "page" })?.value,
+                   let page = Int(pageText) {
+                    pageToOpen = max(0, page - 1)
+                }
+                documentToOpen = id
+                libraryRequestToken &+= 1
+            }
         default:
             break
         }

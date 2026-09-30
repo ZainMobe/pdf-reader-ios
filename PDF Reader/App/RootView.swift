@@ -23,6 +23,8 @@ struct RootView: View {
     @State private var showingNewBlank = false
     @State private var importError: String?
     @State private var isProcessingScan = false
+    @State private var showingAskLibrary = false
+    @State private var askLibraryQuery = ""
 
     private let incomingRouter = IncomingFileRouter.shared
 
@@ -67,6 +69,21 @@ struct RootView: View {
         // Switch to the Library when an incoming file asks to be shown.
         .onChange(of: incomingRouter.libraryRequestToken) { _, _ in
             selection = .library
+        }
+        // Quick Actions, Shortcuts, widgets and pdfeditor:// links.
+        .onChange(of: incomingRouter.pendingAction) { _, action in
+            guard let action else { return }
+            incomingRouter.pendingAction = nil
+            perform(action)
+        }
+        .onAppear {
+            if let action = incomingRouter.pendingAction {
+                incomingRouter.pendingAction = nil
+                perform(action)
+            }
+        }
+        .fullScreenCover(isPresented: $showingAskLibrary) {
+            LibrarySearchView(initialQuery: askLibraryQuery)
         }
         .overlay(alignment: .top) {
             if let banner = incomingRouter.banner {
@@ -116,6 +133,32 @@ struct RootView: View {
     }
 
     // MARK: - Action handlers
+
+    private func perform(_ action: IncomingFileRouter.AppAction) {
+        // Dismiss anything modal first so the requested surface is visible.
+        showingImporter = false
+        showingNewBlank = false
+        switch action {
+        case .scan:
+            guard VNDocumentCameraViewController.isSupported else { importError = "Scanning isn't supported on this device."; return }
+            selection = .add
+            showingScanner = true
+        case .importFiles:
+            selection = .add
+            showingImporter = true
+        case .newBlank:
+            selection = .add
+            showingNewBlank = true
+        case .askLibrary(let query):
+            selection = .ai
+            askLibraryQuery = query
+            if EntitlementStore.shared.isPro {
+                showingAskLibrary = true
+            }
+        case .openTools:
+            selection = .tools
+        }
+    }
 
     private func handleImport(_ result: Result<[URL], any Error>) {
         switch result {

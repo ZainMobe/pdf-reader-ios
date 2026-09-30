@@ -71,6 +71,41 @@
 	</dict>
 	<key>REVENUECAT_API_KEY</key>
 	<string>$(REVENUECAT_API_KEY)</string>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.wappltd.PDF-Reader.scan</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Scan Document</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>doc.viewfinder</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.wappltd.PDF-Reader.import</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Import Files</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>square.and.arrow.down</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.wappltd.PDF-Reader.ask</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Ask your Library</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>sparkle.magnifyingglass</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.wappltd.PDF-Reader.tools</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Tools</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>wrench.and.screwdriver</string>
+		</dict>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>

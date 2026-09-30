@@ -100,6 +100,10 @@ struct LibraryHomeView: View {
                 syncMonitor.start()
                 await ThumbnailBackfill.runIfNeeded(in: modelContext)
                 await SearchableTextBackfill.runIfNeeded(in: modelContext)
+                WidgetPublisher.schedule(from: documents)
+            }
+            .onChange(of: documents.count) { _, _ in
+                WidgetPublisher.schedule(from: documents)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {

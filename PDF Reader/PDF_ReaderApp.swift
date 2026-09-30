@@ -4,6 +4,7 @@ import RevenueCat
 
 @main
 struct PDFAIApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     private let modelContainer: ModelContainer?
     private let bootError: String?
     @Environment(\.scenePhase) private var scenePhase
