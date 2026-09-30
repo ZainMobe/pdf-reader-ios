@@ -104,7 +104,7 @@ struct ReaderView: View {
             if controller.isRedactingArea && !isLocked {
                 HStack(spacing: DesignSystem.Spacing.s) {
                     Image(systemName: "rectangle.dashed")
-                    Text("Drag over anything to mark it. Pinch to zoom.")
+                    Text("Drag over anything to mark it for redaction.")
                         .font(.footnote)
                     Button("Done") { controller.isRedactingArea = false }
                         .font(.footnote.weight(.semibold))
