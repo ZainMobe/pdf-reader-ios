@@ -20,7 +20,7 @@ struct ToolsHomeView: View {
 
     enum ToolSheet: Identifiable {
         case newBlank, merge, split, watermark, pageNumbers, compress, removePassword
-        case imagesToPDF, fileToPDF, pdfToImages, pdfToWord, protect
+        case imagesToPDF, fileToPDF, pdfToImages, pdfToWord, protect, flatten, compare
         var id: Self { self }
     }
 
@@ -80,6 +80,20 @@ struct ToolsHomeView: View {
                         gated { activeSheet = .split }
                     } label: {
                         proRow("Split PDF", systemImage: "rectangle.split.2x1", subtitle: "Break a PDF into two documents")
+                    }
+                    .buttonStyle(.plain)
+                }
+                Section("Review") {
+                    Button {
+                        gated { activeSheet = .compare }
+                    } label: {
+                        proRow("Compare PDFs", systemImage: "doc.on.doc.fill", subtitle: "See what changed between two versions")
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        gated { activeSheet = .flatten }
+                    } label: {
+                        proRow("Flatten PDF", systemImage: "square.3.layers.3d.down.right", subtitle: "Lock annotations and form fields into the page")
                     }
                     .buttonStyle(.plain)
                 }
@@ -155,6 +169,8 @@ struct ToolsHomeView: View {
                 case .pdfToImages: PDFToImagesView()
                 case .pdfToWord: PDFToWordView()
                 case .protect: ProtectPDFView()
+                case .flatten: FlattenPDFView()
+                case .compare: ComparePDFsView()
                 }
             }
             .fullScreenCover(isPresented: $showingScanner) {
