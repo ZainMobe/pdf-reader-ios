@@ -18,6 +18,7 @@ struct AIAssistantView: View {
     @Query(sort: \Document.addedAt, order: .reverse) private var documents: [Document]
 
     @State private var showingPaywall = false
+    @State private var showingAskLibrary = false
 
     // Sequential-sheet plumbing. SwiftUI can't present a second sheet while
     // the first is still dismissing, so each picker captures into an
@@ -36,6 +37,9 @@ struct AIAssistantView: View {
                 .navigationBarTitleDisplayMode(.large)
                 .sheet(isPresented: $showingPaywall) {
                     PaywallView()
+                }
+                .fullScreenCover(isPresented: $showingAskLibrary) {
+                    LibrarySearchView()
                 }
                 .sheet(
                     item: $pickingDocForAction,
@@ -104,6 +108,7 @@ struct AIAssistantView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.xl) {
                 hero
+                askLibraryCard
                 actionsGrid
                 if !recents.isEmpty {
                     recentSection
@@ -155,6 +160,43 @@ struct AIAssistantView: View {
             }
             Spacer(minLength: 0)
         }
+    }
+
+    /// Entry point for cross-document search and answers.
+    private var askLibraryCard: some View {
+        Button {
+            if entitlements.isPro {
+                showingAskLibrary = true
+            } else {
+                showingPaywall = true
+            }
+        } label: {
+            HStack(spacing: DesignSystem.Spacing.m) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                    .frame(width: 36)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(entitlements.isPro ? "Ask your Library" : "Ask your Library (Pro)")
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text("Search across every PDF and get an answer with citations.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(DesignSystem.Spacing.l)
+            .background(
+                RoundedRectangle(cornerRadius: DesignSystem.Radius.medium, style: .continuous)
+                    .fill(Color(uiColor: .secondarySystemBackground))
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var actionsGrid: some View {

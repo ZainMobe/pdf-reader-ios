@@ -38,6 +38,9 @@ final class IncomingFileRouter {
     var banner: Banner?
     /// Document the Library should push. Library clears it after reading.
     var documentToOpen: UUID?
+    /// Page to show once `documentToOpen` is on screen (0-based). Consumed
+    /// by `ReaderController.attach`. Set together with `documentToOpen`.
+    var pageToOpen: Int?
     /// Bumps whenever something asks to show the Library tab.
     var libraryRequestToken: Int = 0
     /// Number of files currently being staged/imported (for a progress pill).

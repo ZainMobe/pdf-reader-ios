@@ -31,6 +31,7 @@ struct LibraryHomeView: View {
     @State private var newTagName = ""
     @State private var showingPaywall = false
     @State private var path = NavigationPath()
+    @State private var showingAskLibrary = false
     @State private var isDropTargeted = false
 
     private let entitlements = EntitlementStore.shared
@@ -137,6 +138,9 @@ struct LibraryHomeView: View {
             }
             .sheet(isPresented: $showingPaywall) {
                 PaywallView()
+            }
+            .fullScreenCover(isPresented: $showingAskLibrary) {
+                LibrarySearchView(initialQuery: searchText)
             }
             .overlay(alignment: .bottom) {
                 VStack(spacing: DesignSystem.Spacing.s) {
@@ -347,7 +351,18 @@ struct LibraryHomeView: View {
         if documents.isEmpty {
             emptyState
         } else if filteredDocuments.isEmpty {
-            ContentUnavailableView.search(text: searchText)
+            ContentUnavailableView {
+                Label("No Results for \"\(searchText)\"", systemImage: "magnifyingglass")
+            } description: {
+                Text("No titles or contents match. Ask AI to search inside every document instead.")
+            } actions: {
+                Button {
+                    if entitlements.isPro { showingAskLibrary = true } else { showingPaywall = true }
+                } label: {
+                    Label("Ask your Library", systemImage: "sparkle.magnifyingglass")
+                }
+                .buttonStyle(.glassProminent)
+            }
         } else {
             switch viewMode {
             case .grid: documentGrid

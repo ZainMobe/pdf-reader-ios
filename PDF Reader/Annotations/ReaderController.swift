@@ -34,6 +34,14 @@ final class ReaderController {
     func attach(pdfView: PDFView, documentURL: URL, documentID: UUID) {
         self.pdfView = pdfView
         self.documentID = documentID
+        // A citation or banner asked for a specific page of this document.
+        let router = IncomingFileRouter.shared
+        if let page = router.pageToOpen, router.documentToOpen == nil, pdfView.document != nil {
+            router.pageToOpen = nil
+            DispatchQueue.main.async { [weak self] in
+                self?.goToPage(page)
+            }
+        }
         if self.documentURL != documentURL {
             disconnect()
             self.documentURL = documentURL
