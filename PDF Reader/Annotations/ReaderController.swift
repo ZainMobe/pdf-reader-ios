@@ -45,6 +45,7 @@ final class ReaderController {
             }
             self.presenter = presenter
             NSFileCoordinator.addFilePresenter(presenter)
+            refreshPendingRedactionCount()
         }
     }
 
@@ -215,32 +216,133 @@ final class ReaderController {
         scheduleSave()
     }
 
-    /// Lays a black rectangle over each line of the current text selection.
-    /// Note: v1 visual redaction only — the original glyphs remain in the
-    /// content stream. True content-stream redaction is a v1.1 effort.
-    func redactSelection() {
-        guard
-            let pdfView,
-            let selection = pdfView.currentSelection
-        else { return }
+    // MARK: - Redaction (Pro)
 
-        var added: [PDFAnnotation] = []
-        for lineSelection in selection.selectionsByLine() {
-            guard let page = lineSelection.pages.first else { continue }
-            let bounds = lineSelection.bounds(for: page)
-            let annotation = PDFAnnotation(
-                bounds: bounds,
-                forType: .square,
-                withProperties: nil
-            )
-            annotation.color = .black
-            annotation.interiorColor = .black
-            page.addAnnotation(annotation)
-            added.append(annotation)
-        }
+    /// Number of pending (not yet applied) redaction marks in the document.
+    /// Drives the "Apply Redactions (N)" menu item.
+    private(set) var pendingRedactionCount = 0
+
+    /// When true, `PDFKitView` shows a drag overlay that turns a rectangle
+    /// into a redaction mark.
+    var isRedactingArea = false
+
+    func refreshPendingRedactionCount() {
+        guard let document = pdfView?.document else { pendingRedactionCount = 0; return }
+        pendingRedactionCount = PDFRedactor.pendingCount(in: document)
+    }
+
+    /// Marks the current text selection for redaction. Nothing is removed
+    /// until `applyRedactions` runs; marks can be undone like other edits.
+    func redactSelection() {
+        guard let pdfView, let selection = pdfView.currentSelection else { return }
+        let added = PDFRedactor.mark(selection: selection)
         pdfView.clearSelection()
+        guard !added.isEmpty else { return }
+        Haptics.impact(.light)
         recordEdit(added)
+        refreshPendingRedactionCount()
         scheduleSave()
+    }
+
+    /// Marks a rectangle given in `PDFView` coordinates (from the drag overlay).
+    func redactArea(inViewRect rect: CGRect) {
+        guard let pdfView else { return }
+        // Use the rect's centre to pick the page; clamp to that page's bounds
+        // so a drag that leaves the page edge doesn't produce a giant mark.
+        let centre = CGPoint(x: rect.midX, y: rect.midY)
+        guard let page = pdfView.page(for: centre, nearest: true) else { return }
+        let pageRect = pdfView.convert(rect, to: page)
+        let clamped = pageRect.intersection(page.bounds(for: pdfView.displayBox))
+        guard clamped.width > 2, clamped.height > 2 else { return }
+        let mark = PDFRedactor.mark(clamped, on: page)
+        Haptics.impact(.light)
+        recordEdit([mark])
+        refreshPendingRedactionCount()
+        scheduleSave()
+    }
+
+    /// Marks every occurrence of `text`. Returns (marks, pages).
+    @discardableResult
+    func redactOccurrences(of text: String) -> (marks: Int, pages: Int) {
+        guard let pdfView, let document = pdfView.document else { return (0, 0) }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else { return (0, 0) }
+        let result = PDFRedactor.markOccurrences(of: trimmed, in: document)
+        guard !result.marks.isEmpty else { return (0, 0) }
+        Haptics.impact(.light)
+        recordEdit(result.marks)
+        refreshPendingRedactionCount()
+        // Force PDFView to repaint pages that gained marks.
+        let current = pdfView.currentPage
+        pdfView.document = document
+        if let current { pdfView.go(to: current) }
+        scheduleSave()
+        return (result.marks.count, result.pages)
+    }
+
+    func clearRedactionMarks() {
+        guard let pdfView, let document = pdfView.document else { return }
+        PDFRedactor.removeAllMarks(in: document)
+        undoStack.removeAll()
+        refreshPendingRedactionCount()
+        let current = pdfView.currentPage
+        pdfView.document = document
+        if let current { pdfView.go(to: current) }
+        scheduleSave()
+    }
+
+    /// Permanently removes the content under every pending mark.
+    ///
+    /// Works on a fresh `PDFDocument` loaded from disk (after flushing any
+    /// pending annotation save) so rasterising can run off the main thread
+    /// without racing the on-screen `PDFView`. The result is written back
+    /// through the file coordinator with the document's password intact,
+    /// then the view reloads.
+    func applyRedactions() async throws -> PDFRedactor.Result {
+        guard let url = documentURL else { throw PDFRedactor.RedactionError.nothingToApply }
+        flushSave()
+        let password = DocumentPasswordStore.password(for: url)
+        let currentIndex = currentPageIndex
+
+        let (result, data) = try await Task.detached(priority: .userInitiated) { () throws -> (PDFRedactor.Result, Data) in
+            guard let pdf = PDFDocument(url: url) else { throw PDFRedactor.RedactionError.nothingToApply }
+            if pdf.isLocked {
+                guard let password, pdf.unlock(withPassword: password) else { throw PDFRedactor.RedactionError.locked }
+            }
+            let result = try PDFRedactor.apply(to: pdf)
+            var options: [PDFDocumentWriteOption: Any] = [:]
+            if let password {
+                options[.userPasswordOption] = password
+                options[.ownerPasswordOption] = password
+            }
+            guard let data = options.isEmpty ? pdf.dataRepresentation() : pdf.dataRepresentation(options: options) else {
+                throw PDFRedactor.RedactionError.renderFailed(0)
+            }
+            return (result, data)
+        }.value
+
+        let coordinator = NSFileCoordinator(filePresenter: presenter)
+        var coordinationError: NSError?
+        var writeError: Error?
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
+            do { try data.write(to: coordinatedURL, options: [.atomic]) } catch { writeError = error }
+        }
+        if let coordinationError { throw coordinationError }
+        if let writeError { throw writeError }
+
+        // Old annotation references are gone with the replaced pages.
+        undoStack.removeAll()
+        isRedactingArea = false
+        if let pdfView {
+            pdfView.document = PDFDocument.opened(at: url)
+            if let currentIndex, let page = pdfView.document?.page(at: min(currentIndex, (pdfView.document?.pageCount ?? 1) - 1)) {
+                pdfView.go(to: page)
+            }
+        }
+        refreshPendingRedactionCount()
+        if let documentID { ThumbnailCache.shared.invalidate(documentID) }
+        Haptics.success()
+        return result
     }
 
     // MARK: - Signing (Pro)

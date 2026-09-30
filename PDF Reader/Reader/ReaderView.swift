@@ -47,6 +47,13 @@ struct ReaderView: View {
     @State private var showingNotePrompt = false
     @State private var noteText = ""
     @State private var showingWatermarkSheet = false
+    @State private var showingFindRedact = false
+    @State private var findRedactText = ""
+    @State private var findRedactResult: String?
+    @State private var showingApplyRedactions = false
+    @State private var isApplyingRedactions = false
+    @State private var redactionError: String?
+    @State private var redactionResultMessage: String?
     @State private var pdfReloadToken = UUID()
     @State private var controller = ReaderController()
     @State private var readAloud = ReadAloud()
@@ -69,7 +76,8 @@ struct ReaderView: View {
                     documentID: document.id,
                     displayMode: $displayMode,
                     displayDirection: $displayDirection,
-                    controller: controller
+                    controller: controller,
+                    isRedactingArea: controller.isRedactingArea
                 )
                 .id(pdfReloadToken)
             }
@@ -87,8 +95,73 @@ struct ReaderView: View {
                     .transition(.scale.combined(with: .opacity))
             }
         }
+        .overlay(alignment: .top) {
+            if controller.isRedactingArea && !isLocked {
+                HStack(spacing: DesignSystem.Spacing.s) {
+                    Image(systemName: "rectangle.dashed")
+                    Text("Drag over anything to mark it. Pinch to zoom.")
+                        .font(.footnote)
+                    Button("Done") { controller.isRedactingArea = false }
+                        .font(.footnote.weight(.semibold))
+                }
+                .padding(.horizontal, DesignSystem.Spacing.l)
+                .padding(.vertical, DesignSystem.Spacing.s)
+                .glassEffect(.regular, in: .capsule)
+                .padding(.top, DesignSystem.Spacing.s)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .overlay {
+            if isApplyingRedactions {
+                VStack(spacing: DesignSystem.Spacing.s) {
+                    ProgressView()
+                    Text("Removing content…").font(.subheadline)
+                }
+                .padding(DesignSystem.Spacing.xl)
+                .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+            }
+        }
         .animation(DesignSystem.Motion.snappy, value: readAloud.state)
         .animation(DesignSystem.Motion.snappy, value: controller.canUndo)
+        .animation(DesignSystem.Motion.snappy, value: controller.isRedactingArea)
+        .alert("Find and Mark for Redaction", isPresented: $showingFindRedact) {
+            TextField("Text to redact", text: $findRedactText)
+                .textInputAutocapitalization(.never)
+            Button("Mark All") {
+                let r = controller.redactOccurrences(of: findRedactText)
+                findRedactResult = r.marks == 0
+                    ? "No matches for \"\(findRedactText)\"."
+                    : "Marked \(r.marks) \(r.marks == 1 ? "match" : "matches") on \(r.pages) \(r.pages == 1 ? "page" : "pages"). Review them, then choose Apply Redactions."
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every occurrence in this document will be marked. Nothing is removed until you apply.")
+        }
+        .alert("Redaction", isPresented: Binding(
+            get: { findRedactResult != nil || redactionResultMessage != nil },
+            set: { if !$0 { findRedactResult = nil; redactionResultMessage = nil } }
+        )) {
+            Button("OK") { findRedactResult = nil; redactionResultMessage = nil }
+        } message: {
+            Text(redactionResultMessage ?? findRedactResult ?? "")
+        }
+        .confirmationDialog(
+            "Apply \(controller.pendingRedactionCount) \(controller.pendingRedactionCount == 1 ? "redaction" : "redactions")?",
+            isPresented: $showingApplyRedactions,
+            titleVisibility: .visible
+        ) {
+            Button("Permanently Remove Content", role: .destructive) { applyRedactions() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Text and images under the marks are deleted from the file, not just covered. Marked pages are flattened. This cannot be undone.")
+        }
+        .alert("Couldn't redact", isPresented: Binding(
+            get: { redactionError != nil }, set: { if !$0 { redactionError = nil } }
+        )) {
+            Button("OK") { redactionError = nil }
+        } message: {
+            Text(redactionError ?? "")
+        }
         .navigationTitle(document.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -315,10 +388,42 @@ struct ReaderView: View {
             } label: {
                 proItem("Add Text", systemImage: "character.textbox")
             }
-            Button {
-                gated { controller.redactSelection() }
+            Menu {
+                Button {
+                    gated { controller.redactSelection() }
+                } label: {
+                    Label("Mark Selected Text", systemImage: "text.badge.minus")
+                }
+                Button {
+                    gated { controller.isRedactingArea.toggle() }
+                } label: {
+                    Label(controller.isRedactingArea ? "Stop Marking Areas" : "Mark an Area",
+                          systemImage: controller.isRedactingArea ? "xmark.rectangle" : "rectangle.dashed")
+                }
+                Button {
+                    gated {
+                        findRedactText = ""
+                        findRedactResult = nil
+                        showingFindRedact = true
+                    }
+                } label: {
+                    Label("Find and Mark…", systemImage: "text.magnifyingglass")
+                }
+                if controller.pendingRedactionCount > 0 {
+                    Divider()
+                    Button(role: .destructive) {
+                        showingApplyRedactions = true
+                    } label: {
+                        Label("Apply \(controller.pendingRedactionCount) \(controller.pendingRedactionCount == 1 ? "Redaction" : "Redactions")", systemImage: "eye.slash.fill")
+                    }
+                    Button {
+                        controller.clearRedactionMarks()
+                    } label: {
+                        Label("Clear Marks", systemImage: "eraser")
+                    }
+                }
             } label: {
-                proItem("Redact Selection", systemImage: "rectangle.fill")
+                proItem("Redact", systemImage: "rectangle.fill")
             }
             Button {
                 gated { showingWatermarkSheet = true }
@@ -480,6 +585,28 @@ struct ReaderView: View {
         passwordError = nil
         showingPasswordSheet = false
         pdfReloadToken = UUID()
+    }
+
+    private func applyRedactions() {
+        isApplyingRedactions = true
+        Task {
+            defer { isApplyingRedactions = false }
+            do {
+                let result = try await controller.applyRedactions()
+                // The text layer changed: refresh the searchable text and
+                // the Library thumbnail so nothing redacted lingers in search.
+                if let pdf = PDFDocument.opened(at: document.fileURL) {
+                    let body = pdf.string?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    document.ocrText = body.isEmpty ? nil : body
+                    document.pageCount = pdf.pageCount
+                    document.fileSize = (try? FileManager.default.attributesOfItem(atPath: document.fileURL.path)[.size] as? Int64) ?? document.fileSize
+                    document.thumbnailData = ThumbnailGenerator.persistableThumbnailData(at: document.fileURL)
+                }
+                redactionResultMessage = "Removed content under \(result.marksApplied) \(result.marksApplied == 1 ? "mark" : "marks") on \(result.pagesRedacted) \(result.pagesRedacted == 1 ? "page" : "pages")."
+            } catch {
+                redactionError = error.localizedDescription
+            }
+        }
     }
 
     private func startInk() {

@@ -20,7 +20,7 @@ struct ToolsHomeView: View {
 
     enum ToolSheet: Identifiable {
         case newBlank, merge, split, watermark, pageNumbers, compress, removePassword
-        case imagesToPDF, fileToPDF, pdfToImages, pdfToWord
+        case imagesToPDF, fileToPDF, pdfToImages, pdfToWord, protect
         var id: Self { self }
     }
 
@@ -99,6 +99,16 @@ struct ToolsHomeView: View {
                 }
                 Section("Security") {
                     Button {
+                        gated { activeSheet = .protect }
+                    } label: {
+                        proRow(
+                            "Protect PDF",
+                            systemImage: "lock.doc",
+                            subtitle: "Require a password to open, limit printing and copying"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    Button {
                         gated { activeSheet = .removePassword }
                     } label: {
                         proRow(
@@ -144,6 +154,7 @@ struct ToolsHomeView: View {
                 case .fileToPDF: FileToPDFView()
                 case .pdfToImages: PDFToImagesView()
                 case .pdfToWord: PDFToWordView()
+                case .protect: ProtectPDFView()
                 }
             }
             .fullScreenCover(isPresented: $showingScanner) {
