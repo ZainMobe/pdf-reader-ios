@@ -44,30 +44,14 @@ struct InkSheet: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .bottomBar) {
-                    HStack(spacing: DesignSystem.Spacing.l) {
-                        Button {
-                            canvasView.tool = PKInkingTool(.pen, color: .label, width: 3)
-                        } label: {
-                            Label("Pen", systemImage: "pencil.tip")
-                        }
-                        Button {
-                            canvasView.tool = PKInkingTool(.marker, color: UIColor.systemYellow.withAlphaComponent(0.4), width: 12)
-                        } label: {
-                            Label("Highlighter", systemImage: "highlighter")
-                        }
-                        Button {
-                            canvasView.tool = PKEraserTool(.bitmap)
-                        } label: {
-                            Label("Eraser", systemImage: "eraser")
-                        }
-                        Spacer()
-                        Button {
-                            canvasView.drawing = PKDrawing()
-                        } label: {
-                            Label("Clear", systemImage: "trash")
-                        }
-                        .tint(.red)
+                ToolbarItem(placement: .topBarTrailing) {
+                    // PencilKit's tool picker owns pens, pressure, colours,
+                    // ruler and eraser, and honours the Apple Pencil
+                    // double-tap and squeeze preferences. We only add Clear.
+                    Button {
+                        canvasView.drawing = PKDrawing()
+                    } label: {
+                        Label("Clear", systemImage: "trash")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -112,13 +96,36 @@ struct InkSheet: View {
 private struct InkCanvasView: UIViewRepresentable {
     @Binding var canvasView: PKCanvasView
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> PKCanvasView {
-        canvasView.drawingPolicy = .anyInput
+        // `.default` follows the system "Only Draw with Apple Pencil" setting:
+        // finger drawing on iPhone, palm rejection and Pencil-only on iPad
+        // when the user has asked for it.
+        canvasView.drawingPolicy = .default
         canvasView.backgroundColor = .clear
         canvasView.isOpaque = false
         canvasView.tool = PKInkingTool(.pen, color: UIColor.label, width: 3)
+
+        let picker = PKToolPicker()
+        picker.setVisible(true, forFirstResponder: canvasView)
+        picker.addObserver(canvasView)
+        context.coordinator.picker = picker
+        DispatchQueue.main.async {
+            canvasView.becomeFirstResponder()
+        }
         return canvasView
     }
 
     func updateUIView(_ uiView: PKCanvasView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: PKCanvasView, coordinator: Coordinator) {
+        coordinator.picker?.setVisible(false, forFirstResponder: uiView)
+        coordinator.picker?.removeObserver(uiView)
+        uiView.resignFirstResponder()
+    }
+
+    final class Coordinator {
+        var picker: PKToolPicker?
+    }
 }

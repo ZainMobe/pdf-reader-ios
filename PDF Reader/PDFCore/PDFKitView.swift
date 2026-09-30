@@ -20,12 +20,21 @@ struct PDFKitView: UIViewRepresentable {
     /// Passed explicitly (rather than read off the controller) so SwiftUI
     /// re-runs `updateUIView` when area-redaction mode toggles.
     var isRedactingArea: Bool = false
+    var theme: ReaderTheme = .light
+    /// Called on Apple Pencil double-tap or squeeze (Pencil Pro).
+    var onPencilAction: (() -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPencilAction: onPencilAction) }
 
     func makeUIView(context: Context) -> PDFView {
         let view = PDFView()
         view.autoScales = true
-        view.backgroundColor = .clear
-        view.document = PDFDocument.opened(at: url)
+        view.backgroundColor = theme.viewBackground
+        ThemedPDFPage.theme = theme
+        view.document = themedDocument(at: url)
+        let pencil = UIPencilInteraction()
+        pencil.delegate = context.coordinator
+        view.addInteraction(pencil)
         view.displayMode = displayMode
         view.displayDirection = displayDirection
         applyPageViewController(to: view)
@@ -34,8 +43,12 @@ struct PDFKitView: UIViewRepresentable {
     }
 
     func updateUIView(_ view: PDFView, context: Context) {
+        context.coordinator.onPencilAction = onPencilAction
         if view.document?.documentURL != url {
-            view.document = PDFDocument.opened(at: url)
+            view.document = themedDocument(at: url)
+        }
+        if ThemedPDFPage.theme != theme || view.backgroundColor != theme.viewBackground {
+            view.applyReaderTheme(theme)
         }
         let modeChanged = view.displayMode != displayMode
         let directionChanged = view.displayDirection != displayDirection
@@ -50,6 +63,29 @@ struct PDFKitView: UIViewRepresentable {
         }
         controller?.attach(pdfView: view, documentURL: url, documentID: documentID)
         syncRedactionOverlay(on: view)
+    }
+
+    private func themedDocument(at url: URL) -> PDFDocument? {
+        let document = PDFDocument.opened(at: url)
+        document?.delegate = ThemedDocumentDelegate.shared
+        return document
+    }
+
+    final class Coordinator: NSObject, UIPencilInteractionDelegate {
+        var onPencilAction: (() -> Void)?
+        init(onPencilAction: (() -> Void)?) { self.onPencilAction = onPencilAction }
+
+        func pencilInteractionDidTap(_ interaction: UIPencilInteraction) {
+            // Respect the system preference: only act when the user chose an
+            // action for double-tap (any value other than "off").
+            guard UIPencilInteraction.preferredTapAction != .ignore else { return }
+            onPencilAction?()
+        }
+
+        func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+            guard squeeze.phase == .ended, UIPencilInteraction.preferredSqueezeAction != .ignore else { return }
+            onPencilAction?()
+        }
     }
 
     /// Adds or removes the drag-to-redact overlay to match the controller.

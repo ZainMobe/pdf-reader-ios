@@ -17,6 +17,8 @@ struct ReaderView: View {
     @AppStorage(AppSettings.defaultDisplayMode) private var defaultDisplayModeRaw: Int = PDFDisplayMode.singlePageContinuous.rawValue
     @AppStorage(AppSettings.defaultDisplayDirection) private var defaultDisplayDirectionRaw: Int = PDFDisplayDirection.vertical.rawValue
     @State private var didApplyDefaults = false
+    @AppStorage(ReaderTheme.storageKey) private var themeRaw: String = ReaderTheme.light.rawValue
+    @State private var showingReflow = false
     @State private var showingSummary = false
     @State private var showingChat = false
     @State private var showingTranslate = false
@@ -77,9 +79,12 @@ struct ReaderView: View {
                     displayMode: $displayMode,
                     displayDirection: $displayDirection,
                     controller: controller,
-                    isRedactingArea: controller.isRedactingArea
+                    isRedactingArea: controller.isRedactingArea,
+                    theme: readerTheme,
+                    onPencilAction: { startInk() }
                 )
                 .id(pdfReloadToken)
+                .background(Color(uiColor: readerTheme.viewBackground))
             }
         }
         .ignoresSafeArea(.container, edges: .bottom)
@@ -161,6 +166,12 @@ struct ReaderView: View {
             Button("OK") { redactionError = nil }
         } message: {
             Text(redactionError ?? "")
+        }
+        .preferredColorScheme(readerTheme.prefersDarkChrome ? .dark : nil)
+        .sheet(isPresented: $showingReflow) {
+            ReflowReaderView(document: document, startPage: controller.currentPageIndex ?? 0) { page in
+                controller.goToPage(page)
+            }
         }
         .navigationTitle(document.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -491,6 +502,16 @@ struct ReaderView: View {
                 Label("Horizontal", systemImage: "arrow.left.and.right")
                     .tag(PDFDisplayDirection.horizontal)
             }
+            Picker("Theme", selection: $themeRaw) {
+                ForEach(ReaderTheme.allCases) { theme in
+                    Label(theme.title, systemImage: theme.systemImage).tag(theme.rawValue)
+                }
+            }
+            Button {
+                showingReflow = true
+            } label: {
+                Label("Text View", systemImage: "text.justify.left")
+            }
             Divider()
             Button {
                 if let url = AnnotationExporter.export(document) {
@@ -608,6 +629,8 @@ struct ReaderView: View {
             }
         }
     }
+
+    private var readerTheme: ReaderTheme { ReaderTheme(rawValue: themeRaw) ?? .light }
 
     private func startInk() {
         guard let index = controller.currentPageIndex else { return }
