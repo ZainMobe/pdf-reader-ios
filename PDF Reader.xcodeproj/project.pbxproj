@@ -42,17 +42,17 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		BF505F10306D48B40016AA74 /* Exceptions for "PDF Reader" folder in "ShareExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Shared/SharedInbox.swift,
-			);
-			target = BF505EF7306D48B40016AA74 /* ShareExtension */;
-		};
 		BF505F06306D48B40016AA74 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+			);
+			target = BF505EF7306D48B40016AA74 /* ShareExtension */;
+		};
+		BF505F10306D48B40016AA74 /* Exceptions for "PDF Reader" folder in "ShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Shared/SharedInbox.swift,
 			);
 			target = BF505EF7306D48B40016AA74 /* ShareExtension */;
 		};

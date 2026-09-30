@@ -167,6 +167,115 @@ enum ImagesToPDF {
         return pagesWritten
     }
 
+    // MARK: - Page-based API (Images to PDF tool)
+
+    /// One source page: a file on disk plus a rotation in quarter turns
+    /// (clockwise) and optional OCR boxes for an invisible text layer.
+    struct Page {
+        var url: URL
+        var quarterTurns: Int = 0
+        var ocrBoxes: [OCRPipeline.RecognizedTextBox]? = nil
+    }
+
+    /// Streams `pages` into a PDF, decoding one image at a time so memory
+    /// stays flat for large batches. `progress` is called on the calling
+    /// thread with the number of pages written so far.
+    @discardableResult
+    nonisolated static func write(
+        pages: [Page],
+        to outputURL: URL,
+        options: Options = Options(),
+        progress: ((Int) -> Void)? = nil
+    ) throws -> Int {
+        guard !pages.isEmpty else { throw ConversionError.noImages }
+        let renderer = UIGraphicsPDFRenderer(
+            bounds: CGRect(origin: .zero, size: options.pageSize.portraitSize ?? CGSize(width: 612, height: 792))
+        )
+        var pagesWritten = 0
+        do {
+            try renderer.writePDF(to: outputURL) { ctx in
+                for page in pages {
+                    autoreleasepool {
+                        guard var image = downsampledImage(at: page.url) else { return }
+                        if page.quarterTurns % 4 != 0 {
+                            image = rotated(image, quarterTurns: page.quarterTurns)
+                        }
+                        let (pageRect, drawRect) = layout(for: image.size, options: options)
+                        ctx.beginPage(withBounds: pageRect, pageInfo: [:])
+                        if let jpeg = image.jpegData(compressionQuality: options.jpegQuality),
+                           let compact = UIImage(data: jpeg) {
+                            compact.draw(in: drawRect)
+                        } else {
+                            image.draw(in: drawRect)
+                        }
+                        if let boxes = page.ocrBoxes, !boxes.isEmpty {
+                            drawInvisibleText(boxes, in: drawRect)
+                        }
+                        pagesWritten += 1
+                        progress?(pagesWritten)
+                    }
+                }
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw ConversionError.writeFailed
+        }
+        if pagesWritten == 0 {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw ConversionError.unreadable(pages[0].url.lastPathComponent)
+        }
+        return pagesWritten
+    }
+
+    /// Decodes, rotates and caps a page image exactly as `write(pages:)`
+    /// will, so OCR runs on the same pixels that end up in the PDF.
+    nonisolated static func renderedImage(for page: Page) -> UIImage? {
+        guard var image = downsampledImage(at: page.url) else { return nil }
+        if page.quarterTurns % 4 != 0 {
+            image = rotated(image, quarterTurns: page.quarterTurns)
+        }
+        return image
+    }
+
+    /// Rotates by 90 degree steps. Positive = clockwise.
+    nonisolated static func rotated(_ image: UIImage, quarterTurns: Int) -> UIImage {
+        let turns = ((quarterTurns % 4) + 4) % 4
+        guard turns != 0 else { return image }
+        let swap = turns % 2 == 1
+        let size = swap ? CGSize(width: image.size.height, height: image.size.width) : image.size
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = image.scale
+        return UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            let c = ctx.cgContext
+            c.translateBy(x: size.width / 2, y: size.height / 2)
+            c.rotate(by: CGFloat(turns) * .pi / 2)
+            image.draw(in: CGRect(x: -image.size.width / 2, y: -image.size.height / 2,
+                                  width: image.size.width, height: image.size.height))
+        }
+    }
+
+    /// Draws OCR regions as clear text inside `rect` (the area the image
+    /// occupies on the page), so PDFKit search and selection work on photos
+    /// exactly as they do on scans. Vision boxes are normalised with a
+    /// bottom-left origin; the PDF context here is top-left.
+    nonisolated static func drawInvisibleText(_ boxes: [OCRPipeline.RecognizedTextBox], in rect: CGRect) {
+        for box in boxes {
+            let b = box.boundingBox
+            let r = CGRect(
+                x: rect.minX + b.minX * rect.width,
+                y: rect.minY + (1 - b.maxY) * rect.height,
+                width: b.width * rect.width,
+                height: b.height * rect.height
+            )
+            let fontSize = max(r.height * 0.8, 4)
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: UIFont.systemFont(ofSize: fontSize),
+                .foregroundColor: UIColor.clear,
+            ]
+            NSAttributedString(string: box.string, attributes: attributes).draw(in: r)
+        }
+    }
+
     // MARK: - Layout
 
     /// Returns the page rect and the rect the image should be drawn into.

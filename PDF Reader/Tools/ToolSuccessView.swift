@@ -11,6 +11,7 @@ struct ToolSuccessView: View {
     let onDone: () -> Void
 
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleScenes
 
     @State private var checkmarkScale: CGFloat = 0.3
     @State private var checkmarkOpacity: Double = 0
@@ -114,8 +115,15 @@ struct ToolSuccessView: View {
                 Haptics.impact(.light)
                 let id = doc.id
                 onDone()
+                // Route through the Library so this works on iPhone too
+                // (openWindow needs multi-scene support, iPad/Mac only).
                 DispatchQueue.main.async {
-                    openWindow(value: id)
+                    if supportsMultipleScenes {
+                        openWindow(value: id)
+                    } else {
+                        IncomingFileRouter.shared.documentToOpen = id
+                        IncomingFileRouter.shared.libraryRequestToken &+= 1
+                    }
                 }
             } label: {
                 Text("Open")

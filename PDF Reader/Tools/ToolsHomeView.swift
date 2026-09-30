@@ -4,8 +4,9 @@ import VisionKit
 
 /// ToolsHomeView — hub of file-level PDF operations.
 ///
-/// Free: Scan, New Blank PDF.
-/// Pro: Merge, Split, Watermark, Page Numbers, Remove Password, Compress.
+/// Free: Scan, New Blank PDF, Images to PDF.
+/// Pro: Merge, Split, Watermark, Page Numbers, Remove Password, Compress,
+/// File to PDF, PDF to Images, PDF to Word.
 struct ToolsHomeView: View {
     @Environment(\.modelContext) private var modelContext
 
@@ -19,6 +20,7 @@ struct ToolsHomeView: View {
 
     enum ToolSheet: Identifiable {
         case newBlank, merge, split, watermark, pageNumbers, compress, removePassword
+        case imagesToPDF, fileToPDF, pdfToImages, pdfToWord
         var id: Self { self }
     }
 
@@ -38,6 +40,32 @@ struct ToolsHomeView: View {
                         activeSheet = .newBlank
                     } label: {
                         row("New Blank PDF", systemImage: "doc.badge.plus", subtitle: "Create an empty document")
+                    }
+                    .buttonStyle(.plain)
+                }
+                Section("Convert") {
+                    Button {
+                        activeSheet = .imagesToPDF
+                    } label: {
+                        row("Images to PDF", systemImage: "photo.on.rectangle.angled", subtitle: "Photos and screenshots into one PDF, with OCR")
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        gated { activeSheet = .fileToPDF }
+                    } label: {
+                        proRow("File to PDF", systemImage: "doc.text.below.ecg", subtitle: "Word, Excel, PowerPoint, Pages, text, web pages")
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        gated { activeSheet = .pdfToImages }
+                    } label: {
+                        proRow("PDF to Images", systemImage: "photo.stack", subtitle: "Export pages as JPEG or PNG")
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        gated { activeSheet = .pdfToWord }
+                    } label: {
+                        proRow("PDF to Word", systemImage: "doc.richtext", subtitle: "Editable .docx or plain text")
                     }
                     .buttonStyle(.plain)
                 }
@@ -112,6 +140,10 @@ struct ToolsHomeView: View {
                 case .pageNumbers: PageNumbersView()
                 case .compress: CompressView()
                 case .removePassword: RemovePasswordView()
+                case .imagesToPDF: ImagesToPDFView()
+                case .fileToPDF: FileToPDFView()
+                case .pdfToImages: PDFToImagesView()
+                case .pdfToWord: PDFToWordView()
                 }
             }
             .fullScreenCover(isPresented: $showingScanner) {
