@@ -30,8 +30,11 @@ struct LibraryHomeView: View {
     @State private var newTagDocument: Document?
     @State private var newTagName = ""
     @State private var showingPaywall = false
+    @State private var path = NavigationPath()
+    @State private var isDropTargeted = false
 
     private let entitlements = EntitlementStore.shared
+    private let incomingRouter = IncomingFileRouter.shared
     private let syncMonitor = ICloudSyncMonitor.shared
 
     private let columns = [GridItem(.adaptive(minimum: 180), spacing: DesignSystem.Spacing.l)]
@@ -46,7 +49,7 @@ struct LibraryHomeView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             VStack(spacing: 0) {
                 if !entitlements.isPro {
                     UpgradeBanner {
@@ -57,6 +60,37 @@ struct LibraryHomeView: View {
                 }
                 filterChips
                 contentArea
+            }
+            // iPad / Mac: drop PDFs and images from Files, Photos, Mail.
+            .dropDestination(for: URL.self) { urls, _ in
+                incomingRouter.handle(urls: urls, stageSynchronously: true, folder: selectedFolder)
+                return true
+            } isTargeted: { targeted in
+                withAnimation(.snappy) { isDropTargeted = targeted }
+            }
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: DesignSystem.Radius.large, style: .continuous)
+                        .strokeBorder(.tint, style: StrokeStyle(lineWidth: 3, dash: [10, 8]))
+                        .background(.tint.opacity(0.06), in: RoundedRectangle(cornerRadius: DesignSystem.Radius.large, style: .continuous))
+                        .overlay {
+                            Label("Drop to add to Library", systemImage: "arrow.down.doc")
+                                .font(.headline)
+                                .padding()
+                                .glassEffect(.regular, in: .capsule)
+                        }
+                        .padding(DesignSystem.Spacing.m)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            // Files arriving from Open-in / Share Extension / drop ask to be shown.
+            .onChange(of: incomingRouter.documentToOpen) { _, newValue in
+                guard newValue != nil else { return }
+                openIncomingDocumentIfNeeded()
+            }
+            .onAppear {
+                openIncomingDocumentIfNeeded()
             }
             .navigationTitle(navTitle)
             .searchable(text: $searchText, prompt: "Search title or contents")
@@ -91,7 +125,7 @@ struct LibraryHomeView: View {
             }
             .fileImporter(
                 isPresented: $showingImporter,
-                allowedContentTypes: [.pdf],
+                allowedContentTypes: [.pdf, .image],
                 allowsMultipleSelection: true,
                 onCompletion: handleImport
             )
@@ -269,7 +303,7 @@ struct LibraryHomeView: View {
             Button {
                 showingImporter = true
             } label: {
-                Label("Import PDF", systemImage: "square.and.arrow.down")
+                Label("Import Files", systemImage: "square.and.arrow.down")
             }
             if VNDocumentCameraViewController.isSupported {
                 Button {
@@ -329,7 +363,7 @@ struct LibraryHomeView: View {
             Text("Import a PDF or scan a document to get started.")
         } actions: {
             VStack(spacing: DesignSystem.Spacing.s) {
-                Button("Import PDF") { showingImporter = true }
+                Button("Import Files") { showingImporter = true }
                     .buttonStyle(.glassProminent)
                 if VNDocumentCameraViewController.isSupported {
                     Button("Scan Document") { showingScanner = true }
@@ -465,19 +499,20 @@ struct LibraryHomeView: View {
         doc.tags = tags
     }
 
+    /// Pushes the document the router asked us to show, popping anything
+    /// already on the stack so the user lands directly on it.
+    private func openIncomingDocumentIfNeeded() {
+        guard let doc = incomingRouter.takeDocumentToOpen(in: modelContext) else { return }
+        if !path.isEmpty { path.removeLast(path.count) }
+        path.append(doc)
+    }
+
     private func handleImport(_ result: Result<[URL], any Error>) {
         switch result {
         case .success(let urls):
-            for url in urls {
-                do {
-                    let imported = try DocumentStorage.importPDF(from: url, into: modelContext)
-                    if let folder = selectedFolder {
-                        imported.folder = folder
-                    }
-                } catch {
-                    importError = error.localizedDescription
-                }
-            }
+            // Router validates, converts images, de-duplicates and files the
+            // result into the folder currently being viewed.
+            incomingRouter.handle(urls: urls, folder: selectedFolder)
         case .failure(let error):
             importError = error.localizedDescription
         }

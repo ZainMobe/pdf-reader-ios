@@ -6,6 +6,7 @@ import RevenueCat
 struct PDFAIApp: App {
     private let modelContainer: ModelContainer?
     private let bootError: String?
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // Configure RevenueCat first so the EntitlementStore singleton can
@@ -54,7 +55,25 @@ struct PDFAIApp: App {
                 RootView()
                     .modelContainer(modelContainer)
                     .onOpenURL { url in
-                        DropboxAuthManager.shared.handleRedirect(url)
+                        // Dropbox OAuth callbacks use the db-<key> scheme.
+                        // Everything else (file URLs from "Open in PDF Editor",
+                        // pdfeditor:// links) goes to the incoming-file router.
+                        if url.scheme?.lowercased().hasPrefix("db-") == true {
+                            DropboxAuthManager.shared.handleRedirect(url)
+                        } else {
+                            IncomingFileRouter.shared.handle(url: url)
+                        }
+                    }
+                    .task {
+                        IncomingFileRouter.shared.configure(container: modelContainer)
+                        IncomingFileRouter.shared.sweepSharedInbox()
+                    }
+                    .onChange(of: scenePhase) { _, phase in
+                        // Share Extension batches land while we're in the
+                        // background; pick them up as soon as we're visible.
+                        if phase == .active {
+                            IncomingFileRouter.shared.sweepSharedInbox()
+                        }
                     }
             } else {
                 BootErrorView(message: bootError ?? "Couldn't open the document database.")

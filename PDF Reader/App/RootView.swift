@@ -24,6 +24,8 @@ struct RootView: View {
     @State private var importError: String?
     @State private var isProcessingScan = false
 
+    private let incomingRouter = IncomingFileRouter.shared
+
     var body: some View {
         TabView(selection: $selection) {
             Tab("Library", systemImage: "books.vertical", value: Destination.library) {
@@ -58,10 +60,22 @@ struct RootView: View {
         .tabViewStyle(.sidebarAdaptable)
         .fileImporter(
             isPresented: $showingImporter,
-            allowedContentTypes: [.pdf],
+            allowedContentTypes: [.pdf, .image],
             allowsMultipleSelection: true,
             onCompletion: handleImport
         )
+        // Switch to the Library when an incoming file asks to be shown.
+        .onChange(of: incomingRouter.libraryRequestToken) { _, _ in
+            selection = .library
+        }
+        .overlay(alignment: .top) {
+            if let banner = incomingRouter.banner {
+                IncomingFileBanner(banner: banner)
+                    .padding(.horizontal, DesignSystem.Spacing.l)
+                    .padding(.top, DesignSystem.Spacing.s)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .fullScreenCover(isPresented: $showingScanner) {
             ScannerLauncher(onCompletion: handleScan)
         }
@@ -69,16 +83,15 @@ struct RootView: View {
             NewBlankPDFView()
         }
         .overlay(alignment: .bottom) {
-            if isProcessingScan {
+            if isProcessingScan || incomingRouter.inFlightCount > 0 {
                 HStack(spacing: DesignSystem.Spacing.s) {
                     ProgressView()
-                    Text("Running OCR…")
+                    Text(isProcessingScan ? "Running OCR…" : "Adding to Library…")
                         .font(.footnote)
                 }
                 .padding(.horizontal, DesignSystem.Spacing.l)
                 .padding(.vertical, DesignSystem.Spacing.m)
                 .glassEffect(.regular, in: .capsule)
-//                .padding(.bottom, 170)
             }
         }
         .alert(
@@ -107,14 +120,9 @@ struct RootView: View {
     private func handleImport(_ result: Result<[URL], any Error>) {
         switch result {
         case .success(let urls):
-            for url in urls {
-                do {
-                    try DocumentStorage.importPDF(from: url, into: modelContext)
-                    Haptics.success()
-                } catch {
-                    importError = error.localizedDescription
-                }
-            }
+            // The router validates, converts images, de-duplicates and
+            // shows the "Added" banner with an Open action.
+            incomingRouter.handle(urls: urls)
         case .failure(let error):
             importError = error.localizedDescription
         }
@@ -146,6 +154,63 @@ private enum Destination: Hashable {
     case library, ai, add, tools, settings
 }
 
+/// Top banner shown after files arrive from outside the app. Tap Open to
+/// jump to the document (or the Library for multi-file batches); swipe up
+/// or wait to dismiss.
+private struct IncomingFileBanner: View {
+    let banner: IncomingFileRouter.Banner
+    private let router = IncomingFileRouter.shared
+
+    var body: some View {
+        HStack(spacing: DesignSystem.Spacing.m) {
+            Image(systemName: banner.systemImage)
+                .font(.title3)
+                .foregroundStyle(banner.isError ? AnyShapeStyle(.orange) : AnyShapeStyle(.tint))
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(banner.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                if let subtitle = banner.subtitle {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+            if banner.documentID != nil || banner.opensLibrary {
+                Button("Open") {
+                    Haptics.impact(.light)
+                    router.performBannerAction()
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, DesignSystem.Spacing.l)
+        .padding(.vertical, DesignSystem.Spacing.m)
+        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.large))
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
+        .gesture(
+            DragGesture(minimumDistance: 10)
+                .onEnded { value in
+                    if value.translation.height < -20 { router.dismissBanner() }
+                }
+        )
+        .onTapGesture {
+            if banner.documentID != nil || banner.opensLibrary {
+                router.performBannerAction()
+            } else {
+                router.dismissBanner()
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
 /// Full-screen Add destination with the three creation actions.
 private struct AddHomeView: View {
     let onScan: () -> Void
@@ -168,9 +233,9 @@ private struct AddHomeView: View {
                     }
                     Button(action: onImport) {
                         row(
-                            "Import PDF",
+                            "Import Files",
                             systemImage: "square.and.arrow.down",
-                            subtitle: "Add PDFs from Files or other apps"
+                            subtitle: "PDFs and images from Files or other apps"
                         )
                     }
                     .buttonStyle(.plain)
