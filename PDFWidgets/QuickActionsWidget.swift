@@ -48,10 +48,28 @@ struct QuickActionsView: View {
     ]
 
     var body: some View {
-        let columns = family == .systemSmall
-            ? [GridItem(.flexible()), GridItem(.flexible())]
-            : [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
-        LazyVGrid(columns: columns, spacing: 8) {
+        if family == .systemSmall {
+            // Small widgets ignore Link; the whole widget is one tap target.
+            VStack(spacing: 8) {
+                Image(systemName: "doc.viewfinder")
+                    .font(.system(size: 34, weight: .semibold))
+                    .foregroundStyle(.tint)
+                Text("Scan")
+                    .font(.headline)
+                Text("Tap to open the scanner")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .widgetURL(URL(string: "pdfeditor://scan"))
+        } else {
+            grid
+        }
+    }
+
+    private var grid: some View {
+        let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+        return LazyVGrid(columns: columns, spacing: 8) {
             ForEach(actions) { action in
                 Link(destination: action.url) {
                     VStack(spacing: 6) {
@@ -62,7 +80,7 @@ struct QuickActionsView: View {
                             .font(.caption2.weight(.medium))
                             .foregroundStyle(.primary)
                     }
-                    .frame(maxWidth: .infinity, minHeight: family == .systemSmall ? 54 : 70)
+                    .frame(maxWidth: .infinity, minHeight: 70)
                     .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
             }

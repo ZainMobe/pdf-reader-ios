@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import SwiftData
 import UIKit
@@ -28,7 +29,9 @@ enum WidgetPublisher {
             for item in recents {
                 var name: String?
                 if let data = item.thumb, let image = UIImage(data: data) {
-                    let fileName = "\(item.id.uuidString).jpg"
+                    // Key by content so a re-rendered thumbnail replaces the old file.
+                    let digest = SHA256.hash(data: data).prefix(6).map { String(format: "%02x", $0) }.joined()
+                    let fileName = "\(item.id.uuidString)-\(digest).jpg"
                     let url = thumbsDir.appending(path: fileName)
                     if !FileManager.default.fileExists(atPath: url.path) {
                         let small = image.preparingThumbnail(of: fitted(image.size, maxEdge: WidgetSnapshot.thumbnailMaxEdge)) ?? image

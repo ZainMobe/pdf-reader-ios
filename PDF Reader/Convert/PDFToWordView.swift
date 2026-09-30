@@ -136,7 +136,8 @@ struct PDFToWordView: View {
     private func export() {
         guard let doc = selectedDoc else { return }
         let url = doc.fileURL
-        let fmt = format
+        let isWord = format == .word
+        let ext = format.fileExtension
         let embed = embedScans
         let baseName = DocumentStorage.sanitizedTitle(doc.title)
         let ocrFallback = doc.ocrText
@@ -150,19 +151,18 @@ struct PDFToWordView: View {
                     guard let pdf = PDFDocument.opened(at: url) else { throw PDFExport.ExportError.writeFailed }
                     let dir = FileManager.default.temporaryDirectory.appending(path: "PDFToWord-\(UUID().uuidString)", directoryHint: .isDirectory)
                     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                    let file = dir.appending(path: "\(baseName).\(fmt.fileExtension)")
-                    switch fmt {
-                    case .word:
+                    let file = dir.appending(path: "\(baseName).\(ext)")
+                    if isWord {
                         var options = PDFExport.WordOptions()
                         options.embedImagesForScannedPages = embed
                         let data = try PDFExport.docx(from: pdf, title: baseName, options: options)
                         try data.write(to: file, options: [.atomic])
                         let preview = try? PDFExport.text(from: pdf, fallbackOCR: ocrFallback)
                         return (file, preview.map { String($0.prefix(600)) })
-                    case .text:
+                    } else {
                         let text = try PDFExport.text(from: pdf, fallbackOCR: ocrFallback)
                         try text.write(to: file, atomically: true, encoding: .utf8)
-                        return (file, String(text.prefix(600)))
+                        return (file, String(text.prefix(600)) as String?)
                     }
                 }.value
                 if let old = exported { try? FileManager.default.removeItem(at: old.deletingLastPathComponent()) }

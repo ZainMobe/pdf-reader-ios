@@ -372,7 +372,9 @@ final class ReaderController {
         undoStack.removeAll()
         isRedactingArea = false
         if let pdfView {
-            pdfView.document = PDFDocument.opened(at: url)
+            let reloaded = PDFDocument.opened(at: url)
+            reloaded?.delegate = ThemedDocumentDelegate.shared
+            pdfView.document = reloaded
             if let currentIndex, let page = pdfView.document?.page(at: min(currentIndex, (pdfView.document?.pageCount ?? 1) - 1)) {
                 pdfView.go(to: page)
             }
@@ -515,7 +517,9 @@ final class ReaderController {
         // Annotation references in the undo stack belong to the soon-to-be
         // replaced PDFDocument, so they'd dangle after the reload.
         undoStack.removeAll()
-        pdfView.document = PDFDocument.opened(at: url)
+        let reloaded = PDFDocument.opened(at: url)
+        reloaded?.delegate = ThemedDocumentDelegate.shared
+        pdfView.document = reloaded
     }
 }
 

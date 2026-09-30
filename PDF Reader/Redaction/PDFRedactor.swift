@@ -182,10 +182,9 @@ enum PDFRedactor {
         let pixelSize = CGSize(width: visualSize.width * scale, height: visualSize.height * scale)
         let image = page.thumbnail(of: pixelSize, for: .mediaBox)
 
-        // Put the page back the way it was in case the write later fails.
-        for annotation in detached { page.addAnnotation(annotation) }
-
         guard image.size.width > 1, image.size.height > 1 else {
+            // Put the page back the way it was; the caller keeps the original.
+            for annotation in detached { page.addAnnotation(annotation) }
             throw RedactionError.renderFailed(pageIndex)
         }
 
@@ -222,6 +221,7 @@ enum PDFRedactor {
         }
 
         guard let newDocument = PDFDocument(data: data), let newPage = newDocument.page(at: 0) else {
+            for annotation in detached { page.addAnnotation(annotation) }
             throw RedactionError.renderFailed(pageIndex)
         }
 
@@ -247,7 +247,10 @@ enum PDFRedactor {
         guard let text = page.string, !text.isEmpty else { return [] }
         let count = page.numberOfCharacters
         guard count > 0 else { return [] }
-        let chars = Array(text)
+        // PDFKit indexes characters in UTF-16 units; walk the NSString so
+        // emoji and combining marks don't shift every following glyph.
+        let ns = text as NSString
+        let unitCount = min(count, ns.length)
         var result: [Glyph] = []
         var runText = ""
         var runBounds = CGRect.null
@@ -260,8 +263,10 @@ enum PDFRedactor {
             runBounds = .null
         }
 
-        for i in 0..<min(count, chars.count) {
-            let ch = chars[i]
+        for i in 0..<unitCount {
+            let unit = ns.character(at: i)
+            guard let scalar = Unicode.Scalar(unit) else { continue } // surrogate half: skip, pair handled by neighbour
+            let ch = Character(scalar)
             if ch == "\n" || ch == "\r" { flush(); continue }
             let bounds = page.characterBounds(at: i)
             guard bounds.width > 0, bounds.height > 0 else { flush(); continue }

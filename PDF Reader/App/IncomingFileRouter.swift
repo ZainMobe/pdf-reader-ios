@@ -148,7 +148,9 @@ final class IncomingFileRouter {
         documentToOpen = nil
         var descriptor = FetchDescriptor<Document>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
+        let document = try? context.fetch(descriptor).first
+        if document == nil { pageToOpen = nil }
+        return document
     }
 
     func dismissBanner() {

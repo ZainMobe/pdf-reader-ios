@@ -45,7 +45,8 @@ enum ZipArchive {
         }
 
         init(data: Data) throws {
-            self.data = data
+            // Re-wrap so indices start at zero even for slices.
+            self.data = Data(data)
             try parseCentralDirectory()
         }
 
@@ -57,12 +58,12 @@ enum ZipArchive {
         func read(_ name: String) throws -> Data? {
             guard let entry = entries[name] else { return nil }
             let lh = entry.localHeaderOffset
-            guard u32(lh) == 0x0403_4b50 else { throw ZipError.corrupt }
+            guard lh >= 0, lh + 30 <= data.count, u32(lh) == 0x0403_4b50 else { throw ZipError.corrupt }
             let nameLen = Int(u16(lh + 26))
             let extraLen = Int(u16(lh + 28))
             let start = lh + 30 + nameLen + extraLen
             let end = start + entry.compressedSize
-            guard end <= data.count, start >= 0 else { throw ZipError.corrupt }
+            guard start >= 0, end >= start, end <= data.count else { throw ZipError.corrupt }
             let slice = data.subdata(in: start..<end)
             switch entry.method {
             case 0:
@@ -92,7 +93,7 @@ enum ZipArchive {
             let entryCount = Int(u16(eocd + 10))
             var offset = Int(u32(eocd + 16))
             for _ in 0..<entryCount {
-                guard offset + 46 <= data.count, u32(offset) == 0x0201_4b50 else { throw ZipError.corrupt }
+                guard offset >= 0, offset + 46 <= data.count, u32(offset) == 0x0201_4b50 else { throw ZipError.corrupt }
                 let method = Int(u16(offset + 10))
                 let compressed = Int(u32(offset + 20))
                 let uncompressed = Int(u32(offset + 24))
@@ -100,6 +101,7 @@ enum ZipArchive {
                 let extraLen = Int(u16(offset + 30))
                 let commentLen = Int(u16(offset + 32))
                 let localOffset = Int(u32(offset + 42))
+                guard offset + 46 + nameLen + extraLen + commentLen <= data.count else { throw ZipError.corrupt }
                 let nameData = data.subdata(in: (offset + 46)..<(offset + 46 + nameLen))
                 let name = String(data: nameData, encoding: .utf8) ?? String(decoding: nameData, as: UTF8.self)
                 entries[name] = Entry(

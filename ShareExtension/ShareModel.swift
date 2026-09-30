@@ -129,7 +129,7 @@ final class ShareModel {
         if provider.hasItemConformingToTypeIdentifier(UTType.image.identifier) {
             // Prefer the on-disk representation: no decode, keeps HEIC as-is.
             let typeID = provider.registeredTypeIdentifiers
-                .compactMap(UTType.init)
+                .compactMap { UTType($0) }
                 .first { $0.conforms(to: .image) } ?? .image
             let ext = typeID.preferredFilenameExtension ?? "jpg"
             let storedName = "\(index).\(ext)"

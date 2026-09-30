@@ -127,12 +127,12 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
 
     // MARK: - Speaking
 
+    /// Applies a new speed or voice immediately while playing. When paused
+    /// the change simply takes effect on the next utterance.
     private func restartCurrentPage() {
-        let wasPlaying = state == .playing
+        guard state == .playing else { return }
         synthesizer.stopSpeaking(at: .immediate)
-        state = .playing
         speakCurrentPage()
-        if !wasPlaying { togglePlayPause() }
     }
 
     private func speakCurrentPage() {

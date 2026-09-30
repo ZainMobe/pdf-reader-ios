@@ -77,7 +77,7 @@ enum DocumentToPDF {
             "net.daringfireball.markdown",
             "public.comma-separated-values-text",
         ]
-        types.append(contentsOf: identifiers.compactMap(UTType.init))
+        types.append(contentsOf: identifiers.compactMap { UTType($0) })
         return types
     }
 

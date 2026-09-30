@@ -35,7 +35,7 @@ enum PDFOperations {
     /// still locked. All file-level operations call this right after
     /// `PDFDocument.opened(at:)`, which has already applied a password the user
     /// entered earlier — so this only fires for documents we've never unlocked.
-    private static func ensureUnlocked(_ pdf: PDFDocument) throws {
+    static func ensureUnlocked(_ pdf: PDFDocument) throws {
         if pdf.isLocked { throw OpError.sourceEncrypted }
     }
 

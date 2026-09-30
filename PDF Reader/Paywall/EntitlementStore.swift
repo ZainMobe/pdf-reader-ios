@@ -18,6 +18,8 @@ final class EntitlementStore {
     private let delegate = EntitlementStoreDelegate()
 
     private init() {
+        // `Purchases.shared` traps when configure() was skipped (missing key).
+        guard Purchases.isConfigured else { return }
         Purchases.shared.delegate = delegate
         Task { await refresh() }
     }
@@ -35,6 +37,7 @@ final class EntitlementStore {
 
     /// Pulls the latest CustomerInfo from RevenueCat and updates state.
     func refresh() async {
+        guard Purchases.isConfigured else { return }
         do {
             let info = try await Purchases.shared.customerInfo()
             apply(customerInfo: info)

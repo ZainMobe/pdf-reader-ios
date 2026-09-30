@@ -203,10 +203,10 @@ actor LibrarySearchIndex {
         for i in hits.indices {
             // Embed the first ~300 characters; sentence embeddings degrade on
             // long inputs and this is enough to capture the passage's topic.
+            let bm25 = hits[i].score / maxBM25
             let head = String(hits[i].text.prefix(300))
-            guard let v = embedding.vector(for: head) else { continue }
-            let semantic = max(0, cosine(queryVector, v))
-            hits[i].score = 0.65 * (hits[i].score / maxBM25) + 0.35 * semantic
+            let semantic = embedding.vector(for: head).map { max(0, cosine(queryVector, $0)) } ?? 0
+            hits[i].score = 0.65 * bm25 + 0.35 * semantic
         }
         hits.sort { $0.score > $1.score }
     }

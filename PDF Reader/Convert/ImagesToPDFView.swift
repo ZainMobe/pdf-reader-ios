@@ -173,6 +173,7 @@ struct ImagesToPDFView: View {
                 }
                 .padding(.vertical, DesignSystem.Spacing.s)
                 .animation(.snappy, value: pages)
+                .onChange(of: pages) { _, _ in draggingID = nil }
             } header: {
                 HStack {
                     Text(pages.count == 1 ? "1 page" : "\(pages.count) pages")
@@ -251,6 +252,7 @@ struct ImagesToPDFView: View {
                 .scaledToFit()
                 .frame(width: 80, height: 100)
                 .onAppear { draggingID = page.id }
+                .onDisappear { draggingID = nil }
         }
         .dropDestination(for: String.self) { ids, _ in
             defer { draggingID = nil }
