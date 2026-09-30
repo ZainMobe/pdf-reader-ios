@@ -7,23 +7,84 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BF505F02306D48B40016AA74 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF505EF8306D48B40016AA74 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		BFA9AF822FBC62F000EF62F7 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = BFA9AF812FBC62F000EF62F7 /* RevenueCat */; };
 		BFA9AFB62FBD93B900EF62F7 /* SwiftyDropbox in Frameworks */ = {isa = PBXBuildFile; productRef = BFA9AFB52FBD93B900EF62F7 /* SwiftyDropbox */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		BF505F00306D48B40016AA74 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = BFA9AAAB2FBC091400EF62F7 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BF505EF7306D48B40016AA74;
+			remoteInfo = ShareExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		BF505F03306D48B40016AA74 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				BF505F02306D48B40016AA74 /* ShareExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		BF505EF8306D48B40016AA74 /* ShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = ShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		BFA9AAB32FBC091400EF62F7 /* PDF Reader.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "PDF Reader.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		BF505F10306D48B40016AA74 /* Exceptions for "PDF Reader" folder in "ShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Shared/SharedInbox.swift,
+			);
+			target = BF505EF7306D48B40016AA74 /* ShareExtension */;
+		};
+		BF505F06306D48B40016AA74 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = BF505EF7306D48B40016AA74 /* ShareExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		BF505EF9306D48B40016AA74 /* ShareExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				BF505F06306D48B40016AA74 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */,
+			);
+			path = ShareExtension;
+			sourceTree = "<group>";
+		};
 		BFA9AAB52FBC091400EF62F7 /* PDF Reader */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				BF505F10306D48B40016AA74 /* Exceptions for "PDF Reader" folder in "ShareExtension" target */,
+			);
 			path = "PDF Reader";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		BF505EF5306D48B40016AA74 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BFA9AAB02FBC091400EF62F7 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -40,6 +101,7 @@
 			isa = PBXGroup;
 			children = (
 				BFA9AAB52FBC091400EF62F7 /* PDF Reader */,
+				BF505EF9306D48B40016AA74 /* ShareExtension */,
 				BFA9AAB42FBC091400EF62F7 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				BFA9AAB32FBC091400EF62F7 /* PDF Reader.app */,
+				BF505EF8306D48B40016AA74 /* ShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -55,6 +118,29 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		BF505EF7306D48B40016AA74 /* ShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BF505F07306D48B40016AA74 /* Build configuration list for PBXNativeTarget "ShareExtension" */;
+			buildPhases = (
+				BF505EF4306D48B40016AA74 /* Sources */,
+				BF505EF5306D48B40016AA74 /* Frameworks */,
+				BF505EF6306D48B40016AA74 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				BF505EF9306D48B40016AA74 /* ShareExtension */,
+				BFA9AAB52FBC091400EF62F7 /* PDF Reader */,
+			);
+			name = ShareExtension;
+			packageProductDependencies = (
+			);
+			productName = ShareExtension;
+			productReference = BF505EF8306D48B40016AA74 /* ShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		BFA9AAB22FBC091400EF62F7 /* PDF Reader */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = BFA9AAC02FBC091500EF62F7 /* Build configuration list for PBXNativeTarget "PDF Reader" */;
@@ -62,10 +148,12 @@
 				BFA9AAAF2FBC091400EF62F7 /* Sources */,
 				BFA9AAB02FBC091400EF62F7 /* Frameworks */,
 				BFA9AAB12FBC091400EF62F7 /* Resources */,
+				BF505F03306D48B40016AA74 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				BF505F01306D48B40016AA74 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				BFA9AAB52FBC091400EF62F7 /* PDF Reader */,
@@ -86,9 +174,12 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2650;
+				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2650;
 				TargetAttributes = {
+					BF505EF7306D48B40016AA74 = {
+						CreatedOnToolsVersion = 27.0;
+					};
 					BFA9AAB22FBC091400EF62F7 = {
 						CreatedOnToolsVersion = 26.5;
 					};
@@ -113,11 +204,19 @@
 			projectRoot = "";
 			targets = (
 				BFA9AAB22FBC091400EF62F7 /* PDF Reader */,
+				BF505EF7306D48B40016AA74 /* ShareExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		BF505EF6306D48B40016AA74 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BFA9AAB12FBC091400EF62F7 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -128,6 +227,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		BF505EF4306D48B40016AA74 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BFA9AAAF2FBC091400EF62F7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -137,7 +243,77 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		BF505F01306D48B40016AA74 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BF505EF7306D48B40016AA74 /* ShareExtension */;
+			targetProxy = BF505F00306D48B40016AA74 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		BF505F04306D48B40016AA74 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5P7HEMT4DQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "PDF Editor";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.wappltd.PDF-Reader.ShareExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		BF505F05306D48B40016AA74 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ShareExtension/ShareExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 5P7HEMT4DQ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ShareExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "PDF Editor";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.wappltd.PDF-Reader.ShareExtension";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		BFA9AABE2FBC091500EF62F7 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReferenceAnchor = BFA9AAB52FBC091400EF62F7 /* PDF Reader */;
@@ -277,6 +453,7 @@
 				INFOPLIST_FILE = "PDF-Reader-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "PDF Editor";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "App uses the camera to scan paper documents into PDFs. You can revoke this permission anytime from your device's settings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -315,6 +492,7 @@
 				INFOPLIST_FILE = "PDF-Reader-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "PDF Editor";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "App uses the camera to scan paper documents into PDFs. You can revoke this permission anytime from your device's settings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -342,6 +520,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		BF505F07306D48B40016AA74 /* Build configuration list for PBXNativeTarget "ShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BF505F04306D48B40016AA74 /* Debug */,
+				BF505F05306D48B40016AA74 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		BFA9AAAE2FBC091400EF62F7 /* Build configuration list for PBXProject "PDF Reader" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
