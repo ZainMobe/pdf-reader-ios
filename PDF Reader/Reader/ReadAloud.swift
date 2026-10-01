@@ -177,7 +177,7 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
 
     nonisolated private static func detectLanguage(in text: String) -> String? {
         guard !text.isEmpty else { return nil }
-        NLLanguageRecognizer.dominantLanguage(for: String(text.prefix(1000)))?.rawValue
+        return NLLanguageRecognizer.dominantLanguage(for: String(text.prefix(1000)))?.rawValue
     }
 
     // MARK: - Background audio, Lock Screen

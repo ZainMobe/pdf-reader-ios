@@ -55,8 +55,6 @@
 		<string>dbapi-2</string>
 		<string>dbapi-8-emm</string>
 	</array>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>PDF Editor saves exported page images to your photo library when you choose Save to Photos.</string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
 		<key>iCloud.com.wappltd.PDF-Reader</key>
@@ -74,36 +72,36 @@
 	<key>UIApplicationShortcutItems</key>
 	<array>
 		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>com.wappltd.PDF-Reader.scan</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Scan Document</string>
 			<key>UIApplicationShortcutItemIconSymbolName</key>
 			<string>doc.viewfinder</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Scan Document</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.wappltd.PDF-Reader.scan</string>
 		</dict>
 		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>com.wappltd.PDF-Reader.import</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Import Files</string>
 			<key>UIApplicationShortcutItemIconSymbolName</key>
 			<string>square.and.arrow.down</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Import Files</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.wappltd.PDF-Reader.import</string>
 		</dict>
 		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>com.wappltd.PDF-Reader.ask</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Ask your Library</string>
 			<key>UIApplicationShortcutItemIconSymbolName</key>
 			<string>sparkle.magnifyingglass</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Ask your Library</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.wappltd.PDF-Reader.ask</string>
 		</dict>
 		<dict>
-			<key>UIApplicationShortcutItemType</key>
-			<string>com.wappltd.PDF-Reader.tools</string>
-			<key>UIApplicationShortcutItemTitle</key>
-			<string>Tools</string>
 			<key>UIApplicationShortcutItemIconSymbolName</key>
 			<string>wrench.and.screwdriver</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Tools</string>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.wappltd.PDF-Reader.tools</string>
 		</dict>
 	</array>
 	<key>UIBackgroundModes</key>
@@ -111,8 +109,6 @@
 		<string>audio</string>
 		<string>remote-notification</string>
 	</array>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchScreen</key>

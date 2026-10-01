@@ -169,10 +169,13 @@ struct ProtectPDFView: View {
 
     private func apply() {
         guard let doc = selectedDoc, passwordsMatch else { return }
-        var permissions: PDFAccessPermissions = [.allowsContentAccessibility]
-        if allowPrinting { permissions.formUnion([.allowsLowQualityPrinting, .allowsHighQualityPrinting]) }
-        if allowCopying { permissions.insert(.allowsContentCopying) }
-        if allowEditing { permissions.formUnion([.allowsDocumentChanges, .allowsCommenting, .allowsFormFieldEntry, .allowsDocumentAssembly]) }
+        // PDFAccessPermissions is imported as an enum, not an OptionSet,
+        // so the flags are combined as a raw bitmask.
+        var flags: [PDFAccessPermissions] = [.allowsContentAccessibility]
+        if allowPrinting { flags += [.allowsLowQualityPrinting, .allowsHighQualityPrinting] }
+        if allowCopying { flags.append(.allowsContentCopying) }
+        if allowEditing { flags += [.allowsDocumentChanges, .allowsCommenting, .allowsFormFieldEntry, .allowsDocumentAssembly] }
+        let permissions = flags.reduce(UInt(0)) { $0 | $1.rawValue }
 
         let request = PDFOperations.ProtectRequest(
             userPassword: password,

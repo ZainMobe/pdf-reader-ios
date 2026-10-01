@@ -6,7 +6,8 @@ extension PDFOperations {
     struct ProtectRequest {
         var userPassword: String
         var ownerPassword: String
-        var permissions: PDFAccessPermissions
+        /// Bitmask of `PDFAccessPermissions` raw values.
+        var permissions: UInt
         var replaceOriginal: Bool
         var rememberPassword: Bool
     }
@@ -40,7 +41,7 @@ extension PDFOperations {
         let options: [PDFDocumentWriteOption: Any] = [
             .userPasswordOption: request.userPassword,
             .ownerPasswordOption: request.ownerPassword,
-            .accessPermissionsOption: NSNumber(value: request.permissions.rawValue),
+            .accessPermissionsOption: NSNumber(value: request.permissions),
         ]
 
         let newID = UUID()

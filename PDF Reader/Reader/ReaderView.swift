@@ -1,6 +1,7 @@
 import SwiftUI
 import PDFKit
 import FoundationModels
+import StoreKit
 
 /// ReaderView — the full reading surface for a single `Document`.
 ///

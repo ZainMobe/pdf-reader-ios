@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		BF505F02306D48B40016AA74 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF505EF8306D48B40016AA74 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		BFA9AF822FBC62F000EF62F7 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = BFA9AF812FBC62F000EF62F7 /* RevenueCat */; };
+		BF506385306E12480016AA74 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = BF506384306E12480016AA74 /* RevenueCat */; };
 		BFA9AFB62FBD93B900EF62F7 /* SwiftyDropbox in Frameworks */ = {isa = PBXBuildFile; productRef = BFA9AFB52FBD93B900EF62F7 /* SwiftyDropbox */; };
 /* End PBXBuildFile section */
 
@@ -49,10 +49,11 @@
 			);
 			target = BF505EF7306D48B40016AA74 /* ShareExtension */;
 		};
-		BF505F10306D48B40016AA74 /* Exceptions for "PDF Reader" folder in "ShareExtension" target */ = {
+		BF506382306D7DA70016AA74 /* Exceptions for "PDF Reader" folder in "ShareExtension" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Shared/SharedInbox.swift,
+				Shared/WidgetSnapshot.swift,
 			);
 			target = BF505EF7306D48B40016AA74 /* ShareExtension */;
 		};
@@ -70,7 +71,7 @@
 		BFA9AAB52FBC091400EF62F7 /* PDF Reader */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				BF505F10306D48B40016AA74 /* Exceptions for "PDF Reader" folder in "ShareExtension" target */,
+				BF506382306D7DA70016AA74 /* Exceptions for "PDF Reader" folder in "ShareExtension" target */,
 			);
 			path = "PDF Reader";
 			sourceTree = "<group>";
@@ -89,7 +90,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BFA9AF822FBC62F000EF62F7 /* RevenueCat in Frameworks */,
+				BF506385306E12480016AA74 /* RevenueCat in Frameworks */,
 				BFA9AFB62FBD93B900EF62F7 /* SwiftyDropbox in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -132,7 +133,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				BF505EF9306D48B40016AA74 /* ShareExtension */,
-				BFA9AAB52FBC091400EF62F7 /* PDF Reader */,
 			);
 			name = ShareExtension;
 			packageProductDependencies = (
@@ -160,8 +160,8 @@
 			);
 			name = "PDF Reader";
 			packageProductDependencies = (
-				BFA9AF812FBC62F000EF62F7 /* RevenueCat */,
 				BFA9AFB52FBD93B900EF62F7 /* SwiftyDropbox */,
+				BF506384306E12480016AA74 /* RevenueCat */,
 			);
 			productName = "PDF Reader";
 			productReference = BFA9AAB32FBC091400EF62F7 /* PDF Reader.app */;
@@ -201,8 +201,8 @@
 			mainGroup = BFA9AAAA2FBC091400EF62F7;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				BFA9AF802FBC62F000EF62F7 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
 				BFA9AFB42FBD93B900EF62F7 /* XCRemoteSwiftPackageReference "SwiftyDropbox" */,
+				BF506383306E12480016AA74 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = BFA9AAB42FBC091400EF62F7 /* Products */;
@@ -461,6 +461,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "App uses the camera to scan paper documents into PDFs. You can revoke this permission anytime from your device's settings.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "PDF Editor saves exported page images to your photo library when you choose Save to Photos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = "Launch Screen";
@@ -500,6 +501,7 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "App uses the camera to scan paper documents into PDFs. You can revoke this permission anytime from your device's settings.";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "PDF Editor saves exported page images to your photo library when you choose Save to Photos.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchStoryboardName = "Launch Screen";
@@ -556,12 +558,12 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		BFA9AF802FBC62F000EF62F7 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
+		BF506383306E12480016AA74 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/RevenueCat/purchases-ios-spm.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 5.73.0;
+				minimumVersion = 5.92.0;
 			};
 		};
 		BFA9AFB42FBD93B900EF62F7 /* XCRemoteSwiftPackageReference "SwiftyDropbox" */ = {
@@ -575,9 +577,9 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		BFA9AF812FBC62F000EF62F7 /* RevenueCat */ = {
+		BF506384306E12480016AA74 /* RevenueCat */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = BFA9AF802FBC62F000EF62F7 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
+			package = BF506383306E12480016AA74 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;
 			productName = RevenueCat;
 		};
 		BFA9AFB52FBD93B900EF62F7 /* SwiftyDropbox */ = {

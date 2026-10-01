@@ -1,86 +1,138 @@
 {
-  "sourceLanguage": "en",
-  "strings": {
-    "NSCameraUsageDescription": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يستخدم التطبيق الكاميرا لمسح المستندات الورقية إلى PDF. يمكنك سحب هذا الإذن في أي وقت من الإعدادات."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La app usa la cámara para escanear documentos en papel a PDF. Puedes revocar este permiso en Ajustes cuando quieras."
-          }
-        },
-        "hi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ऐप कागज़ी दस्तावेज़ों को PDF में स्कैन करने के लिए कैमरे का उपयोग करता है। आप यह अनुमति कभी भी सेटिंग्स से हटा सकते हैं।"
-          }
-        },
-        "id": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aplikasi menggunakan kamera untuk memindai dokumen kertas menjadi PDF. Anda dapat mencabut izin ini kapan saja dari Pengaturan."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O app usa a câmera para digitalizar documentos em papel para PDF. Você pode revogar essa permissão nos Ajustes a qualquer momento."
-          }
-        },
-        "ur": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ایپ کیمرہ کاغذی دستاویزات کو PDF میں اسکین کرنے کے لیے استعمال کرتی ہے۔ آپ یہ اجازت کسی بھی وقت سیٹنگز سے واپس لے سکتے ہیں۔"
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Ask your Library" : {
+
+    },
+    "CFBundleDisplayName" : {
+      "comment" : "Bundle display name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "PDF Editor"
           }
         }
       }
     },
-    "NSPhotoLibraryAddUsageDescription": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يحفظ PDF Editor صور الصفحات المصدَّرة في مكتبة الصور عند اختيار الحفظ في الصور."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "PDF Editor guarda las imágenes de páginas exportadas en tu fototeca cuando eliges Guardar en Fotos."
-          }
-        },
-        "hi": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "जब आप 'फ़ोटो में सहेजें' चुनते हैं तो PDF Editor निर्यात किए गए पृष्ठों की छवियाँ आपकी फ़ोटो लाइब्रेरी में सहेजता है।"
-          }
-        },
-        "id": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "PDF Editor menyimpan gambar halaman yang diekspor ke pustaka foto Anda saat Anda memilih Simpan ke Foto."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O PDF Editor salva as imagens de páginas exportadas na sua fototeca quando você escolhe Salvar nas Fotos."
-          }
-        },
-        "ur": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "جب آپ 'تصاویر میں محفوظ کریں' منتخب کریں تو PDF Editor برآمد شدہ صفحات کی تصاویر آپ کی فوٹو لائبریری میں محفوظ کرتا ہے۔"
+    "CFBundleName" : {
+      "comment" : "Bundle name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "PDF Reader"
           }
         }
       }
+    },
+    "Import Files" : {
+
+    },
+    "NSCameraUsageDescription" : {
+      "comment" : "Privacy - Camera Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يستخدم التطبيق الكاميرا لمسح المستندات الورقية إلى PDF. يمكنك سحب هذا الإذن في أي وقت من الإعدادات."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "App uses the camera to scan paper documents into PDFs. You can revoke this permission anytime from your device's settings."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "La app usa la cámara para escanear documentos en papel a PDF. Puedes revocar este permiso en Ajustes cuando quieras."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ऐप कागज़ी दस्तावेज़ों को PDF में स्कैन करने के लिए कैमरे का उपयोग करता है। आप यह अनुमति कभी भी सेटिंग्स से हटा सकते हैं।"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "Aplikasi menggunakan kamera untuk memindai dokumen kertas menjadi PDF. Anda dapat mencabut izin ini kapan saja dari Pengaturan."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O app usa a câmera para digitalizar documentos em papel para PDF. Você pode revogar essa permissão nos Ajustes a qualquer momento."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ایپ کیمرہ کاغذی دستاویزات کو PDF میں اسکین کرنے کے لیے استعمال کرتی ہے۔ آپ یہ اجازت کسی بھی وقت سیٹنگز سے واپس لے سکتے ہیں۔"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryAddUsageDescription" : {
+      "comment" : "Privacy - Photo Library Additions Usage Description",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يحفظ PDF Editor صور الصفحات المصدَّرة في مكتبة الصور عند اختيار الحفظ في الصور."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "PDF Editor saves exported page images to your photo library when you choose Save to Photos."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "PDF Editor guarda las imágenes de páginas exportadas en tu fototeca cuando eliges Guardar en Fotos."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "जब आप 'फ़ोटो में सहेजें' चुनते हैं तो PDF Editor निर्यात किए गए पृष्ठों की छवियाँ आपकी फ़ोटो लाइब्रेरी में सहेजता है।"
+          }
+        },
+        "id" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "PDF Editor menyimpan gambar halaman yang diekspor ke pustaka foto Anda saat Anda memilih Simpan ke Foto."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "O PDF Editor salva as imagens de páginas exportadas na sua fototeca quando você escolhe Salvar nas Fotos."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "جب آپ 'تصاویر میں محفوظ کریں' منتخب کریں تو PDF Editor برآمد شدہ صفحات کی تصاویر آپ کی فوٹو لائبریری میں محفوظ کرتا ہے۔"
+          }
+        }
+      }
+    },
+    "Scan Document" : {
+
+    },
+    "Tools" : {
+
     }
   },
-  "version": "1.0"
+  "version" : "1.0"
 }
