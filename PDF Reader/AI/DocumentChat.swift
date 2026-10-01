@@ -28,13 +28,16 @@ final class DocumentChat {
 
     private(set) var messages: [Message] = []
     private(set) var status: Status = .idle
-    private let session: LanguageModelSession
+    private var session: LanguageModelSession
+    private let instructions: Instructions
     private var task: Task<Void, Never>?
 
     private static let documentBudget = 6_000
 
-    init?(document: Document) {
-        let documentText = Self.extractText(document)
+    /// Builds the chat from already-extracted text. Returns nil when the
+    /// document has no usable text. Use `extractText(_:)` off the main
+    /// thread to obtain `documentText`.
+    init?(document: Document, documentText: String) {
         guard !documentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
@@ -53,6 +56,7 @@ final class DocumentChat {
             \(truncated)\(suffix)
             """)
 
+        self.instructions = instructions
         self.session = LanguageModelSession(instructions: instructions)
     }
 
@@ -70,21 +74,38 @@ final class DocumentChat {
         task?.cancel()
         task = Task { [weak self] in
             guard let self else { return }
-            do {
-                var accumulated = ""
-                for try await partial in self.session.streamResponse(to: Prompt(trimmed)) {
-                    if Task.isCancelled { return }
-                    accumulated = partial.content
-                    self.updateMessage(id: assistantID) { $0.text = accumulated }
-                }
-                self.updateMessage(id: assistantID) { $0.isStreaming = false }
-                self.status = .idle
-            } catch is CancellationError {
-                return
-            } catch {
-                self.removeMessage(id: assistantID)
-                self.status = .error(error.localizedDescription)
+            await self.stream(prompt: trimmed, into: assistantID, allowRetry: true)
+        }
+    }
+
+    private func stream(prompt: String, into assistantID: UUID, allowRetry: Bool) async {
+        do {
+            var accumulated = ""
+            for try await partial in session.streamResponse(to: Prompt(prompt)) {
+                if Task.isCancelled { return }
+                accumulated = partial.content
+                updateMessage(id: assistantID) { $0.text = accumulated }
             }
+            updateMessage(id: assistantID) { $0.isStreaming = false }
+            status = .idle
+        } catch is CancellationError {
+            return
+        } catch let error as LanguageModelSession.GenerationError {
+            if Task.isCancelled { return }
+            if case .exceededContextWindowSize = error, allowRetry {
+                // The transcript outgrew the 4k-token window. Start a fresh
+                // session seeded with the document again (older turns are
+                // dropped) and retry once, so a long chat doesn't die for good.
+                session = LanguageModelSession(instructions: instructions)
+                await stream(prompt: prompt, into: assistantID, allowRetry: false)
+                return
+            }
+            removeMessage(id: assistantID)
+            status = .error(Self.message(for: error))
+        } catch {
+            if Task.isCancelled { return }
+            removeMessage(id: assistantID)
+            status = .error(error.localizedDescription)
         }
     }
 
@@ -92,9 +113,21 @@ final class DocumentChat {
         if case .error = status { status = .idle }
     }
 
+    /// Stops the in-flight reply. Leaves whatever streamed so far in place
+    /// (or removes the empty bubble) and returns the composer to idle;
+    /// otherwise the Stop button, disabled composer and blinking cursor
+    /// stayed stuck until "New Conversation".
     func cancel() {
         task?.cancel()
         task = nil
+        if let index = messages.lastIndex(where: { $0.isStreaming }) {
+            if messages[index].text.isEmpty {
+                messages.remove(at: index)
+            } else {
+                messages[index].isStreaming = false
+            }
+        }
+        if status == .sending { status = .idle }
     }
 
     private func updateMessage(id: UUID, transform: (inout Message) -> Void) {
@@ -106,12 +139,35 @@ final class DocumentChat {
         messages.removeAll { $0.id == id }
     }
 
-    private static func extractText(_ document: Document) -> String {
-        if let pdf = PDFDocument.opened(at: document.fileURL),
+    private static func message(for error: LanguageModelSession.GenerationError) -> String {
+        switch error {
+        case .exceededContextWindowSize:
+            return "This conversation is too long for the on-device model. Start a new conversation to continue."
+        case .guardrailViolation:
+            return "The on-device model declined to answer that."
+        case .unsupportedLanguageOrLocale:
+            return "The on-device model doesn't support this language."
+        case .assetsUnavailable:
+            return "Apple Intelligence assets aren't ready yet. Try again in a few minutes."
+        case .rateLimited:
+            return "Too many AI requests right now. Please try again shortly."
+        case .concurrentRequests:
+            return "Another AI request is in progress. Try again in a moment."
+        case .refusal:
+            return "The model declined to answer that question."
+        default:
+            return error.localizedDescription
+        }
+    }
+
+    /// Full-document text extraction. Call off the main thread; `PDFDocument.string`
+    /// walks every page and takes seconds on long PDFs.
+    nonisolated static func extractText(at url: URL, fallback: String?) -> String {
+        if let pdf = PDFDocument.opened(at: url),
            let body = pdf.string,
            !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return body
         }
-        return document.ocrText ?? ""
+        return fallback ?? ""
     }
 }

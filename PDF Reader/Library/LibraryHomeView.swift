@@ -34,6 +34,7 @@ struct LibraryHomeView: View {
     @State private var path = NavigationPath()
     @State private var showingAskLibrary = false
     @State private var isDropTargeted = false
+    @State private var deletingDoc: Document?
 
     private let entitlements = EntitlementStore.shared
     private let incomingRouter = IncomingFileRouter.shared
@@ -103,8 +104,38 @@ struct LibraryHomeView: View {
                 await SearchableTextBackfill.runIfNeeded(in: modelContext)
                 WidgetPublisher.schedule(from: documents)
             }
-            .onChange(of: documents.count) { _, _ in
+            // Republish when anything the widget shows changes (open order,
+            // titles, thumbnails), not only when a document is added/removed.
+            .onChange(of: widgetFingerprint) { _, _ in
                 WidgetPublisher.schedule(from: documents)
+            }
+            // Deleting the folder being viewed (from the Folder Manager)
+            // would otherwise leave the Library filtering on a dead model.
+            .onChange(of: folders.count) { _, _ in
+                if let selected = selectedFolder, !folders.contains(where: { $0.id == selected.id }) {
+                    selectedFolder = nil
+                }
+            }
+            .confirmationDialog(
+                "Delete \u{201C}\(deletingDoc?.title ?? "")\u{201D}?",
+                isPresented: Binding(
+                    get: { deletingDoc != nil },
+                    set: { if !$0 { deletingDoc = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let doc = deletingDoc {
+                        DocumentStorage.delete(doc, in: modelContext)
+                        try? modelContext.save()
+                    }
+                    deletingDoc = nil
+                }
+                Button("Cancel", role: .cancel) { deletingDoc = nil }
+            } message: {
+                Text(DocumentStorage.isUsingICloud
+                     ? "The PDF is removed from your Library on all your devices. This can't be undone."
+                     : "The PDF is removed from your Library. This can't be undone.")
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -215,9 +246,17 @@ struct LibraryHomeView: View {
                 Button("Create") {
                     let trimmed = newTagName.trimmingCharacters(in: .whitespacesAndNewlines)
                     if let doc = newTagDocument, !trimmed.isEmpty {
-                        let tag = Tag(name: trimmed)
-                        modelContext.insert(tag)
-                        doc.tags = (doc.tags ?? []) + [tag]
+                        // Reuse an existing tag with the same name instead of
+                        // creating a duplicate "Work" every time.
+                        if let existing = tags.first(where: { $0.name.caseInsensitiveCompare(trimmed) == .orderedSame }) {
+                            if !(doc.tags ?? []).contains(where: { $0.id == existing.id }) {
+                                doc.tags = (doc.tags ?? []) + [existing]
+                            }
+                        } else {
+                            let tag = Tag(name: trimmed)
+                            modelContext.insert(tag)
+                            doc.tags = (doc.tags ?? []) + [tag]
+                        }
                     }
                     newTagDocument = nil
                     newTagName = ""
@@ -230,6 +269,19 @@ struct LibraryHomeView: View {
 
     private var navTitle: String {
         selectedFolder?.name ?? "Library"
+    }
+
+    /// Cheap change signal covering everything the Recents widget renders.
+    private var widgetFingerprint: Int {
+        var hasher = Hasher()
+        for doc in documents {
+            hasher.combine(doc.id)
+            hasher.combine(doc.title)
+            hasher.combine(doc.lastOpenedAt)
+            hasher.combine(doc.pageCount)
+            hasher.combine(doc.thumbnailData?.count ?? 0)
+        }
+        return hasher.finalize()
     }
 
     // MARK: - Filtering
@@ -356,22 +408,56 @@ struct LibraryHomeView: View {
         if documents.isEmpty {
             emptyState
         } else if filteredDocuments.isEmpty {
-            ContentUnavailableView {
-                Label("No Results for \"\(searchText)\"", systemImage: "magnifyingglass")
-            } description: {
-                Text("No titles or contents match. Ask AI to search inside every document instead.")
-            } actions: {
-                Button {
-                    if entitlements.unlock(.aiAction) { showingAskLibrary = true } else { showingPaywall = true }
-                } label: {
-                    Label("Ask your Library", systemImage: "sparkle.magnifyingglass")
+            if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                // A filter or folder emptied the list, not a search: say so
+                // instead of showing `No Results for ""`.
+                filterEmptyState
+            } else {
+                ContentUnavailableView {
+                    Label("No Results for \"\(searchText)\"", systemImage: "magnifyingglass")
+                } description: {
+                    Text("No titles or contents match. Ask AI to search inside every document instead.")
+                } actions: {
+                    Button {
+                        if entitlements.unlock(.aiAction) { showingAskLibrary = true } else { showingPaywall = true }
+                    } label: {
+                        Label("Ask your Library", systemImage: "sparkle.magnifyingglass")
+                    }
+                    .buttonStyle(.glassProminent)
                 }
-                .buttonStyle(.glassProminent)
             }
         } else {
             switch viewMode {
             case .grid: documentGrid
             case .list: documentList
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var filterEmptyState: some View {
+        if let folder = selectedFolder {
+            ContentUnavailableView {
+                Label("Nothing in \u{201C}\(folder.name)\u{201D}", systemImage: "folder")
+            } description: {
+                Text(activeFilter == .all
+                     ? "Use a document's context menu to move it into this folder."
+                     : "No \(activeFilter.title.lowercased()) documents in this folder.")
+            } actions: {
+                Button("Show All Documents") {
+                    selectedFolder = nil
+                    activeFilter = .all
+                }
+                .buttonStyle(.glass)
+            }
+        } else {
+            ContentUnavailableView {
+                Label(activeFilter.emptyTitle, systemImage: activeFilter.systemImage)
+            } description: {
+                Text(activeFilter.emptyDescription)
+            } actions: {
+                Button("Show All") { activeFilter = .all }
+                    .buttonStyle(.glass)
             }
         }
     }
@@ -501,7 +587,9 @@ struct LibraryHomeView: View {
         }
         Divider()
         Button(role: .destructive) {
-            DocumentStorage.delete(doc, in: modelContext)
+            // Deletion removes the file from iCloud on every device and
+            // cascades bookmarks; confirm before doing it.
+            deletingDoc = doc
         } label: {
             Label("Delete", systemImage: "trash")
         }
@@ -588,6 +676,26 @@ enum SmartFilter: String, CaseIterable, Identifiable {
         case .favorites: "star.fill"
         case .signed: "signature"
         case .unread: "envelope.badge"
+        }
+    }
+
+    var emptyTitle: String {
+        switch self {
+        case .all: "No Documents"
+        case .recent: "Nothing Opened Recently"
+        case .favorites: "No Favorites Yet"
+        case .signed: "No Signed Documents"
+        case .unread: "All Caught Up"
+        }
+    }
+
+    var emptyDescription: String {
+        switch self {
+        case .all: "Import a PDF or scan a document to get started."
+        case .recent: "Documents you open in the next seven days show up here."
+        case .favorites: "Use a document's context menu to add it to Favorites."
+        case .signed: "Documents you sign in the Reader are collected here."
+        case .unread: "Every document has been opened at least once."
         }
     }
 }

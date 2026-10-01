@@ -8,8 +8,10 @@ struct ReaderSidebarView: View {
     @Bindable var document: Document
     let currentPageIndex: Int
     let onNavigatePage: (Int) -> Void
-    let onNavigateDestination: (PDFDestination) -> Void
-    let onNavigateAnnotation: (PDFAnnotation) -> Void
+    /// Outline entry: page index plus an optional target point in page space.
+    let onNavigateDestination: (_ pageIndex: Int, _ point: CGPoint?) -> Void
+    /// Annotation: page index plus the annotation's bounds in page space.
+    let onNavigateAnnotation: (_ pageIndex: Int, _ bounds: CGRect) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var section: SidebarSection = .pages
@@ -34,8 +36,8 @@ struct ReaderSidebarView: View {
                         dismiss()
                     }
                 case .outline:
-                    OutlineList(documentURL: document.fileURL) { destination in
-                        onNavigateDestination(destination)
+                    OutlineList(documentURL: document.fileURL) { pageIndex, point in
+                        onNavigateDestination(pageIndex, point)
                         dismiss()
                     }
                 case .bookmarks:
@@ -47,8 +49,8 @@ struct ReaderSidebarView: View {
                         dismiss()
                     }
                 case .annotations:
-                    AnnotationsList(documentURL: document.fileURL) { annotation in
-                        onNavigateAnnotation(annotation)
+                    AnnotationsList(documentURL: document.fileURL) { pageIndex, bounds in
+                        onNavigateAnnotation(pageIndex, bounds)
                         dismiss()
                     }
                 }
@@ -108,9 +110,12 @@ private struct ThumbnailList: View {
             .padding(DesignSystem.Spacing.l)
         }
         .task {
-            if let pdf = PDFDocument.opened(at: documentURL) {
-                pages = (0..<pdf.pageCount).compactMap { pdf.page(at: $0) }
-            }
+            let url = documentURL
+            let loaded = await Task.detached(priority: .userInitiated) { () -> [PDFPage] in
+                guard let pdf = PDFDocument.opened(at: url) else { return [] }
+                return (0..<pdf.pageCount).compactMap { pdf.page(at: $0) }
+            }.value
+            pages = loaded
         }
     }
 }
@@ -119,7 +124,8 @@ private struct ThumbnailList: View {
 
 private struct OutlineList: View {
     let documentURL: URL
-    let onTap: (PDFDestination) -> Void
+    let onTap: (_ pageIndex: Int, _ point: CGPoint?) -> Void
+    @State private var pdf: PDFDocument?
     @State private var outline: PDFOutline?
     @State private var loaded = false
 
@@ -127,7 +133,9 @@ private struct OutlineList: View {
         Group {
             if let outline, outline.numberOfChildren > 0 {
                 List {
-                    OutlineRow(outline: outline, onTap: onTap)
+                    OutlineRow(outline: outline) { destination in
+                        resolve(destination)
+                    }
                 }
             } else if loaded {
                 ContentUnavailableView(
@@ -141,9 +149,29 @@ private struct OutlineList: View {
             }
         }
         .task {
-            outline = PDFDocument.opened(at: documentURL)?.outlineRoot
+            let url = documentURL
+            let opened = await Task.detached(priority: .userInitiated) {
+                PDFDocument.opened(at: url)
+            }.value
+            pdf = opened
+            outline = opened?.outlineRoot
             loaded = true
         }
+    }
+
+    /// Outline destinations reference pages of *this* sheet's PDFDocument,
+    /// which the reader's PDFView can't navigate to directly. Convert to a
+    /// page index plus an optional point so the reader resolves it against
+    /// its own document.
+    private func resolve(_ destination: PDFDestination) {
+        guard let pdf, let page = destination.page else { return }
+        let index = pdf.index(for: page)
+        guard index >= 0, index < pdf.pageCount else { return }
+        let point = destination.point
+        // PDFKit uses kPDFDestinationUnspecifiedValue (a huge CGFloat) for
+        // coordinates the outline doesn't specify.
+        let isSpecified = abs(point.x) < 1_000_000 && abs(point.y) < 1_000_000
+        onTap(index, isSpecified ? point : nil)
     }
 }
 
@@ -228,6 +256,9 @@ private struct BookmarkList: View {
             } else {
                 Section("Saved") {
                     ForEach(allBookmarks) { bookmark in
+                        // Pages can be deleted in the page editor after a
+                        // bookmark was made; such bookmarks can't be opened.
+                        let isReachable = bookmark.pageIndex < max(document.pageCount, 1)
                         Button {
                             onTap(bookmark.pageIndex)
                         } label: {
@@ -235,7 +266,7 @@ private struct BookmarkList: View {
                                 VStack(alignment: .leading) {
                                     Text(bookmark.label)
                                         .font(.headline)
-                                    Text("Page \(bookmark.pageIndex + 1)")
+                                    Text(isReachable ? "Page \(bookmark.pageIndex + 1)" : "Page \(bookmark.pageIndex + 1) · no longer in this document")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -243,6 +274,7 @@ private struct BookmarkList: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        .disabled(!isReachable)
                     }
                     .onDelete { offsets in
                         for index in offsets {
@@ -268,7 +300,7 @@ private struct BookmarkList: View {
 
 private struct AnnotationsList: View {
     let documentURL: URL
-    let onTap: (PDFAnnotation) -> Void
+    let onTap: (_ pageIndex: Int, _ bounds: CGRect) -> Void
     @State private var entries: [Entry] = []
     @State private var loaded = false
 
@@ -283,7 +315,7 @@ private struct AnnotationsList: View {
             if !entries.isEmpty {
                 List(entries) { entry in
                     Button {
-                        onTap(entry.annotation)
+                        onTap(entry.pageIndex, entry.annotation.bounds)
                     } label: {
                         AnnotationRow(entry: entry)
                     }
@@ -300,26 +332,27 @@ private struct AnnotationsList: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .task { load() }
+        .task { await load() }
     }
 
-    private func load() {
-        guard let pdf = PDFDocument.opened(at: documentURL) else {
-            loaded = true
-            return
-        }
-        var collected: [Entry] = []
-        for index in 0..<pdf.pageCount {
-            guard let page = pdf.page(at: index) else { continue }
-            for annotation in page.annotations where shouldList(annotation) {
-                collected.append(Entry(annotation: annotation, pageIndex: index))
+    private func load() async {
+        let url = documentURL
+        let collected = await Task.detached(priority: .userInitiated) { () -> [Entry] in
+            guard let pdf = PDFDocument.opened(at: url) else { return [] }
+            var collected: [Entry] = []
+            for index in 0..<pdf.pageCount {
+                guard let page = pdf.page(at: index) else { continue }
+                for annotation in page.annotations where Self.shouldList(annotation) {
+                    collected.append(Entry(annotation: annotation, pageIndex: index))
+                }
             }
-        }
+            return collected
+        }.value
         entries = collected
         loaded = true
     }
 
-    private func shouldList(_ annotation: PDFAnnotation) -> Bool {
+    nonisolated private static func shouldList(_ annotation: PDFAnnotation) -> Bool {
         guard let type = annotation.type else { return false }
         // Hide widgets, links, and other interactive types.
         let listable: Set<String> = ["Highlight", "Underline", "StrikeOut", "Ink", "FreeText", "Text", "Square", "Stamp"]

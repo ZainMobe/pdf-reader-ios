@@ -9,6 +9,7 @@ struct PageEditorView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var editor: PageEditor?
+    @State private var isLoading = true
     @State private var saveError: String?
 
     var body: some View {
@@ -24,6 +25,8 @@ struct PageEditorView: View {
                     } else {
                         pageList(editor)
                     }
+                } else if isLoading {
+                    ProgressView()
                 } else {
                     ContentUnavailableView(
                         "Couldn't open document",
@@ -54,8 +57,12 @@ struct PageEditorView: View {
                 Text(saveError ?? "")
             }
         }
-        .onAppear {
-            editor = PageEditor(url: document.fileURL)
+        .task {
+            guard editor == nil else { return }
+            let url = document.fileURL
+            await DocumentStorage.ensureDownloaded(at: url)
+            editor = PageEditor(url: url)
+            isLoading = false
         }
     }
 
@@ -140,7 +147,22 @@ struct PageEditorView: View {
         guard let editor else { dismiss(); return }
         do {
             try editor.save()
-            document.pageCount = editor.pageCount
+            let newPageCount = editor.pageCount
+            document.pageCount = newPageCount
+            // Keep Library metadata and the cached first-page thumbnail in
+            // step with the rewritten file.
+            let url = document.fileURL
+            if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int64 {
+                document.fileSize = size
+            }
+            document.lastPageIndex = min(document.lastPageIndex, max(0, newPageCount - 1))
+            ThumbnailCache.shared.invalidate(document.id)
+            Task { [document] in
+                let data = await Task.detached(priority: .utility) {
+                    ThumbnailGenerator.persistableThumbnailData(at: url)
+                }.value
+                if let data { document.thumbnailData = data }
+            }
             onSave()
             dismiss()
         } catch {

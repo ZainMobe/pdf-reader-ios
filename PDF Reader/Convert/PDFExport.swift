@@ -3,7 +3,7 @@ import PDFKit
 import UIKit
 
 /// Turns a PDF into other formats: Word (.docx), plain text, and page images.
-enum PDFExport {
+nonisolated enum PDFExport {
     enum ExportError: LocalizedError {
         case locked
         case noPages
@@ -115,7 +115,12 @@ enum PDFExport {
                 }
             } else if options.embedImagesForScannedPages {
                 let bounds = page.bounds(for: .mediaBox)
-                let scale = options.imageDPI / 72
+                var scale = options.imageDPI / 72
+                // Cap the bitmap like `imageData(for:)` does; scanned pages
+                // can have very large point sizes and would otherwise need
+                // hundreds of MB per page.
+                let longest = max(bounds.width, bounds.height) * scale
+                if longest > 4000 { scale *= 4000 / longest }
                 let size = CGSize(width: bounds.width * scale, height: bounds.height * scale)
                 let image = page.thumbnail(of: size, for: .mediaBox)
                 if let jpeg = image.jpegData(compressionQuality: 0.8) {

@@ -4,7 +4,7 @@ import UIKit
 
 /// Compares two PDFs page by page: word-level text differences plus page
 /// images for side-by-side and overlay views.
-enum PDFCompare {
+nonisolated enum PDFCompare {
     enum Segment: Hashable {
         case same(String)
         case added(String)

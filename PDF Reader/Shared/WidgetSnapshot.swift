@@ -6,7 +6,7 @@ import Foundation
 /// The app writes `recents.json` and small JPEG thumbnails whenever the
 /// Library changes; the widget only ever reads. Kept deliberately tiny so
 /// timeline reloads stay under WidgetKit's memory limit.
-enum WidgetSnapshot {
+nonisolated enum WidgetSnapshot {
     struct Recent: Codable, Identifiable, Hashable {
         var id: UUID
         var title: String

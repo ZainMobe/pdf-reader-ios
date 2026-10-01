@@ -17,14 +17,18 @@ import Security
 ///
 /// Keyed by filename rather than full path: the container URL changes between
 /// installs, the `<uuid>.pdf` filename does not.
-enum DocumentPasswordStore {
+/// Thread-safe (every access to the memo goes through `lock`), so it is
+/// explicitly `nonisolated`: callers include detached rendering, search and
+/// AI tasks, and the project's default main-actor isolation would otherwise
+/// flag each of them.
+nonisolated enum DocumentPasswordStore {
 
     private static let service = "com.wappltd.pdf.document-password"
 
     /// Keychain reads are a syscall each, and `PDFDocument.opened(at:)` runs on
     /// every thumbnail, search and AI pass. Memoise per launch.
-    private static var cache: [String: String] = [:]
-    private static var misses: Set<String> = []
+    nonisolated(unsafe) private static var cache: [String: String] = [:]
+    nonisolated(unsafe) private static var misses: Set<String> = []
     private static let lock = NSLock()
 
     // MARK: - Lookup
@@ -138,7 +142,7 @@ extension PDFDocument {
     ///
     /// A document we have no password for is still returned, locked; callers
     /// that care check `isLocked` as before.
-    static func opened(at url: URL) -> PDFDocument? {
+    nonisolated static func opened(at url: URL) -> PDFDocument? {
         guard let pdf = PDFDocument(url: url) else { return nil }
         guard pdf.isLocked else { return pdf }
 

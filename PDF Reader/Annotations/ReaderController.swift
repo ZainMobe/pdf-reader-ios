@@ -39,36 +39,79 @@ final class ReaderController {
     var onPageChanged: ((Int) -> Void)?
     private var pageObserver: NSObjectProtocol?
 
+    /// Last page the user was on in this session. Restored when the host
+    /// rebuilds the `PDFView` (password unlock, form fill, page edits).
+    private var lastKnownPageIndex: Int?
+
+    /// Fires after a successful write so the host can refresh derived data
+    /// (Library thumbnail, file size).
+    var onSaved: (() -> Void)?
+
+    /// Set when a write fails so the host can tell the user instead of
+    /// silently losing edits on exit.
+    var saveError: String?
+
+    /// True once an annotation edit exists that hasn't been written to disk.
+    /// Without it, every `flushSave` (scene inactive, view disappear) would
+    /// rewrite the entire PDF even when nothing changed.
+    private var isDirty = false
+
     func attach(pdfView: PDFView, documentURL: URL, documentID: UUID) {
+        let isNewView = self.pdfView !== pdfView
+        let isSameDocument = self.documentURL == documentURL
         self.pdfView = pdfView
         self.documentID = documentID
+
+        // Only navigate once the document is actually readable. A locked
+        // PDF (password still pending) must not consume the saved reading
+        // position, or the unlock reload lands on page 1.
+        let isReadable = pdfView.document != nil && pdfView.document?.isLocked == false
+
+        if isNewView, isSameDocument {
+            // The host rebuilt the view: the undo stack references pages of
+            // the old PDFDocument and would dangle.
+            undoStack.removeAll()
+        }
+
         // A citation or banner asked for a specific page of this document.
         let router = IncomingFileRouter.shared
-        if let page = router.pageToOpen, router.documentToOpen == nil, pdfView.document != nil {
+        if let page = router.pageToOpen, router.documentToOpen == nil, isReadable {
             router.pageToOpen = nil
             initialPageIndex = nil
             DispatchQueue.main.async { [weak self] in
                 self?.goToPage(page)
             }
-        } else if let page = initialPageIndex, pdfView.document != nil {
+        } else if let page = initialPageIndex, isReadable {
             initialPageIndex = nil
             if page > 0 {
                 DispatchQueue.main.async { [weak self] in
                     self?.goToPage(page)
                 }
             }
+        } else if isNewView, isSameDocument, isReadable, let page = lastKnownPageIndex, page > 0 {
+            DispatchQueue.main.async { [weak self] in
+                self?.goToPage(page)
+            }
         }
-        if pageObserver == nil {
+
+        // The observer is bound to a specific PDFView instance, so it has to
+        // be re-registered whenever the host hands us a new one.
+        if isNewView || pageObserver == nil {
+            if let pageObserver {
+                NotificationCenter.default.removeObserver(pageObserver)
+            }
             pageObserver = NotificationCenter.default.addObserver(
                 forName: .PDFViewPageChanged, object: pdfView, queue: .main
             ) { [weak self] _ in
+                guard let controller = self else { return }
                 Task { @MainActor in
-                    guard let self, let index = self.currentPageIndex else { return }
-                    self.onPageChanged?(index)
+                    guard let index = controller.currentPageIndex else { return }
+                    controller.lastKnownPageIndex = index
+                    controller.onPageChanged?(index)
                 }
             }
         }
-        if self.documentURL != documentURL {
+        if !isSameDocument {
             disconnect()
             self.documentURL = documentURL
             let presenter = PDFFilePresenter(url: documentURL) { [weak self] in
@@ -122,25 +165,43 @@ final class ReaderController {
         pdfView.go(to: page)
     }
 
-    /// Navigates the underlying view to an arbitrary PDF destination
-    /// (typically from a `PDFOutline` entry).
-    func go(to destination: PDFDestination) {
-        pdfView?.go(to: destination)
+    /// Navigates to a point on a page, both given in PDF page space.
+    ///
+    /// Sheets (search, outline, notes) open their own `PDFDocument` to do
+    /// their work, so the `PDFPage`/`PDFSelection` objects they produce
+    /// belong to a different document instance than the one on screen.
+    /// `PDFView.go(to:)` silently ignores foreign pages, so navigation is
+    /// expressed as index + geometry and resolved against our document.
+    func go(toPageIndex index: Int, point: CGPoint? = nil) {
+        guard
+            let pdfView,
+            let page = pdfView.document?.page(at: index)
+        else { return }
+        if let point {
+            pdfView.go(to: PDFDestination(page: page, at: point))
+        } else {
+            pdfView.go(to: page)
+        }
     }
 
-    /// Navigates the underlying view to a PDF selection (typically a search
-    /// result) and highlights the matched range.
-    func navigate(to selection: PDFSelection) {
-        pdfView?.go(to: selection)
-        pdfView?.setCurrentSelection(selection, animate: true)
+    /// Scrolls to a rectangle on a page (page space) and highlights the
+    /// text inside it. Used for search results.
+    func navigate(toPageIndex index: Int, bounds: CGRect) {
+        guard
+            let pdfView,
+            let page = pdfView.document?.page(at: index)
+        else { return }
+        // PDFDestination's point lands at the top-left of the viewport, and
+        // PDF space is bottom-up, so aim at the rect's top edge.
+        pdfView.go(to: PDFDestination(page: page, at: CGPoint(x: bounds.minX, y: bounds.maxY)))
+        if let selection = page.selection(for: bounds), !selection.selectionsByLine().isEmpty {
+            pdfView.setCurrentSelection(selection, animate: true)
+        }
     }
 
-    /// Navigates the underlying view to a PDF annotation by building a
-    /// destination at the annotation's bounds.
-    func navigate(to annotation: PDFAnnotation) {
-        guard let page = annotation.page else { return }
-        let destination = PDFDestination(page: page, at: annotation.bounds.origin)
-        pdfView?.go(to: destination)
+    /// Navigates to an annotation's location by page index + bounds.
+    func navigate(toAnnotationAtPageIndex index: Int, bounds: CGRect) {
+        go(toPageIndex: index, point: CGPoint(x: bounds.minX, y: bounds.maxY))
     }
 
     // MARK: - Markup (free)
@@ -368,8 +429,10 @@ final class ReaderController {
         if let coordinationError { throw coordinationError }
         if let writeError { throw writeError }
 
-        // Old annotation references are gone with the replaced pages.
+        // Old annotation references are gone with the replaced pages, and the
+        // on-screen document is about to be replaced by the file we just wrote.
         undoStack.removeAll()
+        isDirty = false
         isRedactingArea = false
         if let pdfView {
             let reloaded = PDFDocument.opened(at: url)
@@ -442,6 +505,8 @@ final class ReaderController {
             }
         }
 
+        // The undone edit may have been a redaction mark.
+        refreshPendingRedactionCount()
         scheduleSave()
     }
 
@@ -460,6 +525,7 @@ final class ReaderController {
     }
 
     private func scheduleSave() {
+        isDirty = true
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
@@ -473,6 +539,7 @@ final class ReaderController {
     /// is passed in so we don't fire `presentedItemDidChange` on ourselves.
     private func saveNow() {
         guard
+            isDirty,
             let pdfView,
             let document = pdfView.document,
             let url = documentURL
@@ -490,24 +557,35 @@ final class ReaderController {
 
         let coordinator = NSFileCoordinator(filePresenter: presenter)
         var coordinationError: NSError?
+        var didWrite = false
         coordinator.coordinate(
             writingItemAt: url,
             options: .forReplacing,
             error: &coordinationError
         ) { coordinatedURL in
             if writeOptions.isEmpty {
-                document.write(to: coordinatedURL)
+                didWrite = document.write(to: coordinatedURL)
             } else {
-                document.write(to: coordinatedURL, withOptions: writeOptions)
+                didWrite = document.write(to: coordinatedURL, withOptions: writeOptions)
             }
         }
 
+        guard didWrite, coordinationError == nil else {
+            // Keep the edits marked dirty so the next flush retries, and let
+            // the host surface the problem.
+            saveError = coordinationError?.localizedDescription
+                ?? "Your latest edits couldn't be saved to this PDF. Check available storage and try again."
+            return
+        }
+        isDirty = false
+
         // The first page may now look different (signature, ink, highlight,
-        // redaction, etc.), so drop the cached library thumbnail. Next time
-        // DocumentThumbnailView's task runs it will regenerate from disk.
+        // redaction, etc.), so drop the cached library thumbnail and let the
+        // host refresh the persisted one.
         if let documentID {
             ThumbnailCache.shared.invalidate(documentID)
         }
+        onSaved?()
     }
 
     /// Called by our `PDFFilePresenter` when another writer modifies the file.
@@ -515,8 +593,10 @@ final class ReaderController {
     private func reloadFromExternalChange() {
         guard let pdfView, let url = documentURL else { return }
         // Annotation references in the undo stack belong to the soon-to-be
-        // replaced PDFDocument, so they'd dangle after the reload.
+        // replaced PDFDocument, so they'd dangle after the reload. Unsaved
+        // in-memory edits are superseded by the external write.
         undoStack.removeAll()
+        isDirty = false
         let reloaded = PDFDocument.opened(at: url)
         reloaded?.delegate = ThemedDocumentDelegate.shared
         pdfView.document = reloaded

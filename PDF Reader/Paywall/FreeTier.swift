@@ -25,6 +25,16 @@ enum ProFeature: String, CaseIterable {
         case .signing: "signatures"
         }
     }
+
+    /// Singular form used when the daily allowance is exactly one.
+    var singularName: String {
+        switch self {
+        case .aiAction: "AI action"
+        case .tool: "Pro tool"
+        case .editing: "editing action"
+        case .signing: "signature"
+        }
+    }
 }
 
 /// Metered free tier: instead of hard-locking Pro features, free users get
@@ -57,7 +67,9 @@ enum FreeTier {
     /// Text for the paywall after a block, e.g. "You've used today's 3 free AI actions."
     static var paywallMessage: String? {
         guard let feature = lastBlocked else { return nil }
-        return "You've used today's \(feature.dailyAllowance) free \(feature.displayName). Pro removes the limits."
+        let allowance = feature.dailyAllowance
+        let noun = allowance == 1 ? feature.singularName : feature.displayName
+        return "You've used today's \(allowance) free \(noun). Pro removes the limits."
     }
 
     /// Label suffix for menu rows: "(2 free today)" or "(Pro)".

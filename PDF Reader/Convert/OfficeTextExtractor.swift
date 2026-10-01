@@ -262,7 +262,7 @@ enum OfficeTextExtractor {
             case "c":
                 let text: String
                 switch cellType {
-                case "s": text = Int(value).flatMap { $0 < shared.count ? shared[$0] : nil } ?? ""
+                case "s": text = Int(value).flatMap { $0 >= 0 && $0 < shared.count ? shared[$0] : nil } ?? ""
                 case "inlineStr": text = inlineText
                 case "b": text = value == "1" ? "TRUE" : "FALSE"
                 default: text = value

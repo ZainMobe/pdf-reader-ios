@@ -12,6 +12,7 @@ struct MergePDFsView: View {
     @State private var title = "Merged PDF"
     @State private var error: String?
     @State private var success: ToolSuccessResult?
+    @State private var isWorking = false
 
     var body: some View {
         NavigationStack {
@@ -63,12 +64,22 @@ struct MergePDFsView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.disabled(isWorking)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(mergeLabel) { merge() }
                         .buttonStyle(.glassProminent)
-                        .disabled(selected.count < 2)
+                        .disabled(selected.count < 2 || isWorking)
+                }
+            }
+            .overlay {
+                if isWorking {
+                    VStack(spacing: DesignSystem.Spacing.s) {
+                        ProgressView()
+                        Text("Merging…").font(.subheadline)
+                    }
+                    .padding(DesignSystem.Spacing.xl)
+                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -125,20 +136,29 @@ struct MergePDFsView: View {
     }
 
     private func merge() {
-        do {
-            let sourceCount = selected.count
-            let merged = try PDFOperations.merge(
-                selected,
-                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-                in: modelContext
-            )
-            success = ToolSuccessResult(
-                title: "PDFs Merged",
-                summary: "Combined \(sourceCount) documents into 1 — \(merged.pageCount) pages total",
-                documents: [merged]
-            )
-        } catch {
-            self.error = error.localizedDescription
+        let sources = selected
+        let sourceCount = sources.count
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalTitle = trimmedTitle.isEmpty ? "Merged PDF" : trimmedTitle
+        isWorking = true
+        Task {
+            defer { isWorking = false }
+            // Evicted iCloud files open as nil; make every source local first
+            // so a merge never silently drops a document.
+            for doc in sources {
+                await DocumentStorage.ensureDownloaded(at: doc.fileURL)
+            }
+            do {
+                let merged = try PDFOperations.merge(sources, title: finalTitle, in: modelContext)
+                try? modelContext.save()
+                success = ToolSuccessResult(
+                    title: "PDFs Merged",
+                    summary: "Combined \(sourceCount) documents into 1 — \(merged.pageCount) pages total",
+                    documents: [merged]
+                )
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

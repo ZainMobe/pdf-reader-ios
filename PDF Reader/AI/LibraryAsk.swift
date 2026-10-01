@@ -120,8 +120,14 @@ final class LibraryAsk {
                     if Task.isCancelled { return }
                     self.answer = partial.content
                 }
+                if Task.isCancelled { return }
                 self.status = .done
+            } catch is CancellationError {
+                // A newer question or Stop superseded this one; its state
+                // belongs to the new task now.
+                return
             } catch {
+                if Task.isCancelled { return }
                 // Retrieval results are still useful; surface the model error softly.
                 self.status = .failed(Self.friendly(error))
             }
@@ -130,19 +136,29 @@ final class LibraryAsk {
 
     func cancel() {
         task?.cancel()
+        task = nil
         isAnswerStreaming = false
         if status == .answering || status == .searching { status = .done }
     }
 
     private static func friendly(_ error: Error) -> String {
-        let text = error.localizedDescription
-        if text.localizedCaseInsensitiveContains("context") || text.localizedCaseInsensitiveContains("exceed") {
-            return "The excerpts were too long for the on-device model. Try a more specific question."
+        if let gen = error as? LanguageModelSession.GenerationError {
+            switch gen {
+            case .exceededContextWindowSize:
+                return "The excerpts were too long for the on-device model. Try a more specific question."
+            case .guardrailViolation, .refusal:
+                return "The on-device model declined to answer this. The matching passages are shown below."
+            case .unsupportedLanguageOrLocale:
+                return "The on-device model doesn't support this language. The matching passages are shown below."
+            case .assetsUnavailable:
+                return "Apple Intelligence assets aren't ready yet. The matching passages are shown below."
+            case .rateLimited, .concurrentRequests:
+                return "The on-device model is busy. Try again in a moment; the matching passages are shown below."
+            default:
+                break
+            }
         }
-        if text.localizedCaseInsensitiveContains("guardrail") || text.localizedCaseInsensitiveContains("safety") {
-            return "The on-device model declined to answer this. The matching passages are shown below."
-        }
-        return "The on-device model couldn't finish: \(text). The matching passages are shown below."
+        return "The on-device model couldn't finish: \(error.localizedDescription). The matching passages are shown below."
     }
 
     // MARK: - Citation navigation
@@ -151,7 +167,9 @@ final class LibraryAsk {
     /// opening words. Falls back to page 0.
     nonisolated static func pageIndex(for passage: String, in url: URL) async -> Int {
         await Task.detached(priority: .userInitiated) { () -> Int in
-            guard let pdf = PDFDocument(url: url), !pdf.isLocked else { return 0 }
+            // `opened(at:)` applies a remembered password so citations into
+            // protected documents land on the right page instead of page 1.
+            guard let pdf = PDFDocument.opened(at: url), !pdf.isLocked else { return 0 }
             // Take a distinctive probe: skip very short leading words, use
             // up to 6 words so hyphenation and line breaks don't defeat it.
             let words = passage.split(separator: " ").map(String.init)

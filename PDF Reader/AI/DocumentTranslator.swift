@@ -67,7 +67,11 @@ final class DocumentTranslator {
 
         let languageName = language.displayName
         let isRTL = language.isRTL
-        let tempURL = DocumentStorage.pdfStorageDirectory
+        // Scratch output lives in tmp, not the iCloud-synced library folder:
+        // a file there uploads during review and is orphaned forever if the
+        // app is killed before Save/Discard. `saveToLibrary` copies across
+        // volumes when a plain move isn't possible.
+        let tempURL = FileManager.default.temporaryDirectory
             .appending(path: "translation-\(UUID().uuidString).pdf")
 
         task = Task { [weak self] in
@@ -362,6 +366,21 @@ final class DocumentTranslator {
                 )
                 translatorLog.debug("\(tag, privacy: .public): single-line success in \(Self.elapsed(started))ms")
                 return [translated]
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch let error as LanguageModelSession.GenerationError {
+                // One oversized or blocked "line" (PDFKit sometimes returns a
+                // whole column as a single selection) must not abort the whole
+                // document. Keep the original text for it, matching the
+                // per-line fallback path below.
+                switch error {
+                case .exceededContextWindowSize, .guardrailViolation, .refusal:
+                    translatorLog.error("\(tag, privacy: .public): single-line skipped (\(String(describing: error), privacy: .public)) — keeping original")
+                    return [lines[0]]
+                default:
+                    translatorLog.error("\(tag, privacy: .public): single-line FAILED: \(String(describing: error), privacy: .public)")
+                    throw error
+                }
             } catch {
                 translatorLog.error("\(tag, privacy: .public): single-line FAILED: \(String(describing: error), privacy: .public)")
                 throw error

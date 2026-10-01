@@ -34,7 +34,7 @@ struct ReadAloudControls: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text("Page \(aloud.currentPageIndex + 1) of \(aloud.totalPages)")
+                Text(aloud.totalPages == 0 ? "Preparing…" : "Page \(aloud.currentPageIndex + 1) of \(aloud.totalPages)")
                     .font(.caption)
                 Text(aloud.state == .paused ? "Paused" : "Reading aloud")
                     .font(.caption2)

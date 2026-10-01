@@ -50,7 +50,7 @@ enum DocumentToPDF {
     }
 
     /// Page geometry for all conversions.
-    struct PageSetup {
+    nonisolated struct PageSetup {
         var size: CGSize = CGSize(width: 612, height: 792) // US Letter
         var margins: UIEdgeInsets = UIEdgeInsets(top: 54, left: 54, bottom: 54, right: 54)
 
@@ -98,14 +98,14 @@ enum DocumentToPDF {
 
             switch ext {
             case "txt", "text", "log", "csv", "json", "xml", "swift", "py", "js", "ts", "java", "kt", "c", "h", "m", "cpp", "sh", "yml", "yaml":
-                let text = try String(contentsOf: url, encoding: .utf8)
+                let text = try readText(at: url)
                 let mono = ["json", "xml", "swift", "py", "js", "ts", "java", "kt", "c", "h", "m", "cpp", "sh", "yml", "yaml", "csv", "log"].contains(ext)
                 let attributed = plainAttributed(text, monospaced: mono)
                 let data = try TextRenderer.render(attributed, page: page)
                 return Output(data: data, pageCount: PDFDocument(data: data)?.pageCount ?? 0, note: nil, title: title)
 
             case "md", "markdown":
-                let text = try String(contentsOf: url, encoding: .utf8)
+                let text = try readText(at: url)
                 let attributed = markdownAttributed(text)
                 let data = try TextRenderer.render(attributed, page: page)
                 return Output(data: data, pageCount: PDFDocument(data: data)?.pageCount ?? 0, note: nil, title: title)
@@ -176,17 +176,30 @@ enum DocumentToPDF {
             return plainAttributed(text, monospaced: false)
         }
         // Map presentation intents to fonts so headings and lists read as such.
+        //
+        // Runs split on every attribute boundary (bold, link, code…), not
+        // just paragraphs, so the newline that restores block boundaries is
+        // emitted once per block (tracked by presentation intent identity),
+        // not once per run — otherwise "This is **bold** text" became three lines.
         let out = NSMutableAttributedString()
+        var lastBlockIdentity: Int?
         for run in parsed.runs {
             var font = UIFont.systemFont(ofSize: 11)
             var prefix = ""
+            let blockIdentity = run.presentationIntent?.components.first?.identity
+            let startsNewBlock = blockIdentity != lastBlockIdentity
+            if startsNewBlock, lastBlockIdentity != nil {
+                out.append(NSAttributedString(string: "\n", attributes: [.font: font]))
+            }
+            lastBlockIdentity = blockIdentity
+
             if let intent = run.presentationIntent {
                 for component in intent.components {
                     switch component.kind {
                     case .header(let level):
                         font = UIFont.systemFont(ofSize: max(11, 22 - CGFloat(level) * 2), weight: .bold)
                     case .listItem(let ordinal):
-                        prefix = ordinal > 0 ? "\(ordinal). " : "•  "
+                        if startsNewBlock { prefix = ordinal > 0 ? "\(ordinal). " : "•  " }
                     case .codeBlock:
                         font = UIFont.monospacedSystemFont(ofSize: 9.5, weight: .regular)
                     case .blockQuote:
@@ -211,10 +224,23 @@ enum DocumentToPDF {
             out.append(NSAttributedString(string: piece, attributes: [
                 .font: font, .foregroundColor: UIColor.black, .paragraphStyle: style,
             ]))
-            // Markdown runs drop paragraph boundaries; restore them.
-            out.append(NSAttributedString(string: "\n", attributes: [.font: font]))
         }
+        out.append(NSAttributedString(string: "\n", attributes: [.font: UIFont.systemFont(ofSize: 11)]))
         return out
+    }
+
+    /// Reads a text file, detecting its encoding. Falls back to Windows-1252
+    /// (the usual encoding of CSVs exported from Excel on Windows) instead of
+    /// failing with an opaque "couldn't be opened using text encoding" error.
+    private static func readText(at url: URL) throws -> String {
+        var encoding = String.Encoding.utf8
+        if let text = try? String(contentsOf: url, usedEncoding: &encoding) {
+            return text
+        }
+        if let text = try? String(contentsOf: url, encoding: .utf8) {
+            return text
+        }
+        return try String(contentsOf: url, encoding: .windowsCP1252)
     }
 
     /// Cheap blank-page check: renders page 1 tiny and looks for any pixel

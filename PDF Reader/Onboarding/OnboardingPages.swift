@@ -75,6 +75,7 @@ struct OnboardingAIPage: View {
     @State private var typedText: String = ""
     @State private var bubbleVisible = false
     @State private var pageVisible = false
+    @State private var typingTask: Task<Void, Never>?
 
     private let fullText = "This contract grants exclusive distribution rights to Party A for 36 months."
 
@@ -172,7 +173,11 @@ struct OnboardingAIPage: View {
             bubbleVisible = true
         }
 
-        Task { @MainActor in
+        // Cancel the previous typewriter loop first: swiping away and back
+        // within a couple of seconds otherwise left two loops appending to
+        // `typedText` and interleaving characters.
+        typingTask?.cancel()
+        typingTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(600))
             for ch in fullText {
                 guard !Task.isCancelled else { return }

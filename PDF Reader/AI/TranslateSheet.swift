@@ -14,6 +14,16 @@ struct TranslateSheet: View {
     @State private var languagePickerOpen = false
     @State private var savedDocumentTitle: String?
     @State private var didStartInitial = false
+    @State private var showingDiscardConfirm = false
+
+    /// True while there is work or a result that dismissing would throw away.
+    private var hasUnsavedWork: Bool {
+        guard savedDocumentTitle == nil else { return false }
+        switch translator.state {
+        case .translating, .rendering, .ready: return true
+        case .idle, .extracting, .failed: return false
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -41,6 +51,19 @@ struct TranslateSheet: View {
                     translator.cancel()
                 }
             }
+            // A multi-minute translation shouldn't vanish on an accidental
+            // swipe; Done asks first while work or an unsaved result exists.
+            .interactiveDismissDisabled(hasUnsavedWork)
+            .confirmationDialog(
+                "Discard this translation?",
+                isPresented: $showingDiscardConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) { dismiss() }
+                Button("Keep Working", role: .cancel) {}
+            } message: {
+                Text("The translated PDF hasn't been saved to your Library.")
+            }
         }
     }
 
@@ -55,7 +78,13 @@ struct TranslateSheet: View {
             .foregroundStyle(.secondary)
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button("Done") { dismiss() }
+            Button("Done") {
+                if hasUnsavedWork {
+                    showingDiscardConfirm = true
+                } else {
+                    dismiss()
+                }
+            }
         }
     }
 

@@ -11,6 +11,7 @@ struct PageNumbersView: View {
     @State private var selectedDoc: Document?
     @State private var error: String?
     @State private var success: ToolSuccessResult?
+    @State private var isWorking = false
 
     var body: some View {
         NavigationStack {
@@ -68,12 +69,22 @@ struct PageNumbersView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.disabled(isWorking)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Apply") { apply() }
                         .buttonStyle(.glassProminent)
-                        .disabled(selectedDoc == nil)
+                        .disabled(selectedDoc == nil || isWorking)
+                }
+            }
+            .overlay {
+                if isWorking {
+                    VStack(spacing: DesignSystem.Spacing.s) {
+                        ProgressView()
+                        Text("Numbering pages…").font(.subheadline)
+                    }
+                    .padding(DesignSystem.Spacing.xl)
+                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -91,15 +102,21 @@ struct PageNumbersView: View {
 
     private func apply() {
         guard let doc = selectedDoc else { return }
-        do {
-            let numbered = try PDFOperations.addPageNumbers(doc, in: modelContext)
-            success = ToolSuccessResult(
-                title: "Page Numbers Added",
-                summary: "Numbered all \(numbered.pageCount) \(numbered.pageCount == 1 ? "page" : "pages")",
-                documents: [numbered]
-            )
-        } catch {
-            self.error = error.localizedDescription
+        isWorking = true
+        Task {
+            defer { isWorking = false }
+            await DocumentStorage.ensureDownloaded(at: doc.fileURL)
+            do {
+                let numbered = try PDFOperations.addPageNumbers(doc, in: modelContext)
+                try? modelContext.save()
+                success = ToolSuccessResult(
+                    title: "Page Numbers Added",
+                    summary: "Numbered all \(numbered.pageCount) \(numbered.pageCount == 1 ? "page" : "pages")",
+                    documents: [numbered]
+                )
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

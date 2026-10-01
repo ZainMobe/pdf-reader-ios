@@ -18,7 +18,7 @@ import UniformTypeIdentifiers
 ///       <batchID>/
 ///         manifest.json        written LAST, atomically. No manifest = incomplete batch.
 ///         0.pdf, 1.jpg, ...    staged payloads, named by index so order is stable
-enum SharedInbox {
+nonisolated enum SharedInbox {
     /// Must match the App Group added to both targets' entitlements.
     static let appGroupIdentifier = "group.com.wappltd.PDF-Reader"
 

@@ -29,7 +29,9 @@ struct SettingsHomeView: View {
             Form {
                 Section("Subscription") {
                     LabeledContent("Plan", value: entitlements.isPro ? "Pro" : "Free")
-                    if entitlements.isPro {
+                    // Lifetime is a one-time purchase; the subscription
+                    // management sheet would be empty for it.
+                    if entitlements.isPro, entitlements.activeProductID != SubscriptionTier.lifetime.id {
                         Button {
                             showingManageSubscription = true
                         } label: {
@@ -58,6 +60,9 @@ struct SettingsHomeView: View {
                     Text("Spread the word")
                 } footer: {
                     if !entitlements.isPro {
+                        // Reading `usageVersion` subscribes this view to
+                        // allowance changes made elsewhere in the app.
+                        let _ = entitlements.usageVersion
                         Text("Free plan: \(FreeTier.remaining(.aiAction)) AI actions, \(FreeTier.remaining(.tool)) Pro tools and \(FreeTier.remaining(.editing)) editing actions left today. Limits reset at midnight.")
                     }
                 }

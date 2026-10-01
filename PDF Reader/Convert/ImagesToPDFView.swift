@@ -462,7 +462,8 @@ struct ImagesToPDFView: View {
                     title: "PDF Created",
                     summary: "\(count) \(count == 1 ? "image" : "images") combined into \(finalTitle)"
                         + (searchable ? " with searchable text" : ""),
-                    documents: [doc]
+                    documents: [doc],
+                    meteredFeature: nil
                 )
             } catch {
                 self.error = error.localizedDescription

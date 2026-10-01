@@ -83,7 +83,8 @@ struct NewBlankPDFView: View {
             success = ToolSuccessResult(
                 title: "Blank PDF Created",
                 summary: "\(blank.pageCount) \(blank.pageCount == 1 ? "page" : "pages") · \(pageSize.displayName)",
-                documents: [blank]
+                documents: [blank],
+                meteredFeature: nil
             )
         } catch {
             self.error = error.localizedDescription

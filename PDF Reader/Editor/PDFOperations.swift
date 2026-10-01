@@ -142,7 +142,9 @@ enum PDFOperations {
         let merged = PDFDocument()
         var insertIndex = 0
         for doc in documents {
-            guard let pdf = PDFDocument.opened(at: doc.fileURL) else { continue }
+            // An unreadable source (iCloud placeholder, damaged file) must
+            // fail the merge rather than silently produce a shorter PDF.
+            guard let pdf = PDFDocument.opened(at: doc.fileURL) else { throw OpError.noSourceDocument }
             if pdf.isLocked { throw OpError.sourceEncrypted }
             for pageIndex in 0..<pdf.pageCount {
                 guard
@@ -215,12 +217,18 @@ enum PDFOperations {
             ]
             cgContext.beginPDFPage(pageInfo as CFDictionary)
 
-            // Rasterize the page at the chosen DPI.
+            // Rasterize the page at the chosen DPI. The renderer must use
+            // scale 1: the default format uses the screen scale, which made
+            // "72 DPI" really 216 DPI on a 3x phone, inflated memory 4-9x and
+            // often produced output larger than the source.
             let imageSize = CGSize(
                 width: pageMediaBox.width * scale,
                 height: pageMediaBox.height * scale
             )
-            let imageRenderer = UIGraphicsImageRenderer(size: imageSize)
+            let format = UIGraphicsImageRendererFormat.default()
+            format.scale = 1
+            format.opaque = true
+            let imageRenderer = UIGraphicsImageRenderer(size: imageSize, format: format)
             let pageImage = imageRenderer.image { imgCtx in
                 let cg = imgCtx.cgContext
                 cg.setFillColor(UIColor.white.cgColor)
@@ -355,9 +363,12 @@ enum PDFOperations {
     private static func drawWatermark(text: String, opacity: CGFloat, in pageRect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         let fontSize = max(min(pageRect.width, pageRect.height) * 0.12, 24)
+        // Fixed colours: dynamic system colours resolve against the current
+        // trait collection, which is dark-mode aware and would draw a
+        // near-white watermark on a white page.
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.boldSystemFont(ofSize: fontSize),
-            .foregroundColor: UIColor.systemGray.withAlphaComponent(opacity),
+            .foregroundColor: UIColor(white: 0.5, alpha: opacity),
         ]
         let attributed = NSAttributedString(string: text, attributes: attributes)
         let size = attributed.size()
@@ -370,9 +381,11 @@ enum PDFOperations {
     }
 
     private static func drawPageNumber(current: Int, total: Int, in pageRect: CGRect) {
+        // `UIColor.label` is white in dark mode, which made page numbers
+        // invisible on white pages when the tool ran on a dark-mode device.
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 10, weight: .medium),
-            .foregroundColor: UIColor.label.withAlphaComponent(0.7),
+            .foregroundColor: UIColor.black.withAlphaComponent(0.7),
         ]
         let attributed = NSAttributedString(string: "\(current) / \(total)", attributes: attributes)
         let size = attributed.size()

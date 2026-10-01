@@ -11,20 +11,22 @@ enum OCRPipeline {
         let boundingBox: CGRect
     }
 
+    /// Upper bound on simultaneous `.accurate` recognitions. Each one holds
+    /// a full-resolution bitmap plus Vision's working set; running every
+    /// page of a 25-page scan at once spikes memory and throttles the device.
+    private static let maxConcurrentRecognitions = max(2, min(4, ProcessInfo.processInfo.activeProcessorCount / 2))
+
     /// Returns per-region recognition results, preserving bounding boxes
     /// (needed for the invisible-text overlay in scanned PDFs).
     static func recognizeDetailed(_ image: UIImage) async -> [RecognizedTextBox] {
         guard let cgImage = image.cgImage else { return [] }
 
-        return await withCheckedContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, _ in
-                let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
-                let boxes = observations.compactMap { observation -> RecognizedTextBox? in
-                    guard let candidate = observation.topCandidates(1).first else { return nil }
-                    return RecognizedTextBox(string: candidate.string, boundingBox: observation.boundingBox)
-                }
-                continuation.resume(returning: boxes)
-            }
+        // Run synchronously on a background thread and read `results` after
+        // `perform` returns. The completion-handler form resumed the
+        // continuation from both the handler and the `catch` when Vision
+        // reported an error through both channels, which traps.
+        return await Task.detached(priority: .userInitiated) { () -> [RecognizedTextBox] in
+            let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
 
@@ -32,9 +34,14 @@ enum OCRPipeline {
             do {
                 try handler.perform([request])
             } catch {
-                continuation.resume(returning: [])
+                return []
             }
-        }
+            let observations = request.results ?? []
+            return observations.compactMap { observation -> RecognizedTextBox? in
+                guard let candidate = observation.topCandidates(1).first else { return nil }
+                return RecognizedTextBox(string: candidate.string, boundingBox: observation.boundingBox)
+            }
+        }.value
     }
 
     /// Returns concatenated text only — convenience for callers that don't
@@ -44,17 +51,30 @@ enum OCRPipeline {
         return boxes.map(\.string).joined(separator: "\n")
     }
 
-    /// Recognizes text in many images concurrently, preserving page order.
+    /// Recognizes text in many images with bounded concurrency, preserving
+    /// page order.
     static func recognizeAllDetailed(_ images: [UIImage]) async -> [[RecognizedTextBox]] {
-        await withTaskGroup(of: (Int, [RecognizedTextBox]).self) { group in
-            for (index, image) in images.enumerated() {
+        guard !images.isEmpty else { return [] }
+        return await withTaskGroup(of: (Int, [RecognizedTextBox]).self) { group in
+            var results = [[RecognizedTextBox]](repeating: [], count: images.count)
+            var next = 0
+
+            func enqueue() {
+                guard next < images.count else { return }
+                let index = next
+                let image = images[index]
+                next += 1
                 group.addTask { (index, await recognizeDetailed(image)) }
             }
-            var pieces: [(Int, [RecognizedTextBox])] = []
-            for await item in group {
-                pieces.append(item)
+
+            for _ in 0..<min(maxConcurrentRecognitions, images.count) {
+                enqueue()
             }
-            return pieces.sorted { $0.0 < $1.0 }.map(\.1)
+            for await (index, boxes) in group {
+                results[index] = boxes
+                enqueue()
+            }
+            return results
         }
     }
 

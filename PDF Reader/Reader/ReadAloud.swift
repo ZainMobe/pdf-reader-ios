@@ -41,8 +41,12 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private var pages: [String] = []
     private var detectedLanguage: String?
-    private var remoteCommandsInstalled = false
+    /// Remote-command targets registered by this instance. Removed in
+    /// `stop()` so a new `ReadAloud` (one per Reader) doesn't stack targets
+    /// on the shared command center.
+    private var remoteCommandTargets: [(MPRemoteCommand, Any)] = []
     private var thumbnail: UIImage?
+    private var loadTask: Task<Void, Never>?
     /// Fires when the current page changes so the host can scroll the PDFView
     /// to match.
     var onPageChange: ((Int) -> Void)?
@@ -68,23 +72,49 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func start(document: Document, fromPage pageIndex: Int) {
-        guard let pdf = PDFDocument.opened(at: document.fileURL), !pdf.isLocked else { return }
-        pages = (0..<pdf.pageCount).map { pdf.page(at: $0)?.string ?? "" }
-        if pages.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
-           let ocr = document.ocrText, !ocr.isEmpty {
-            // Scanned document: read the OCR text as one long page.
-            pages = [ocr]
-        }
-        totalPages = pages.count
+        loadTask?.cancel()
+        let url = document.fileURL
+        let ocrFallback = document.ocrText
         documentTitle = document.title
-        currentPageIndex = min(max(0, pageIndex), max(0, totalPages - 1))
-        detectedLanguage = Self.detectLanguage(in: pages.first(where: { $0.count > 40 }) ?? "")
         thumbnail = document.thumbnailData.flatMap(UIImage.init(data:))
 
-        activateAudioSession()
-        installRemoteCommands()
+        // Show the transport controls right away; extracting the text of a
+        // long PDF can take seconds and must not block the main thread.
         state = .playing
-        speakCurrentPage()
+        totalPages = 0
+        currentPageIndex = 0
+
+        loadTask = Task { [weak self] in
+            let extracted = await Task.detached(priority: .userInitiated) { () -> [String]? in
+                guard let pdf = PDFDocument.opened(at: url), !pdf.isLocked else { return nil }
+                var pages = (0..<pdf.pageCount).map { pdf.page(at: $0)?.string ?? "" }
+                if pages.allSatisfy({ $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }),
+                   let ocr = ocrFallback, !ocr.isEmpty {
+                    // Scanned document: read the OCR text as one long page.
+                    pages = [ocr]
+                }
+                return pages
+            }.value
+            guard let self, !Task.isCancelled, self.state != .idle else { return }
+            guard let extracted, extracted.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                // Nothing to read (locked, unreadable, or image-only with no OCR).
+                self.stop()
+                return
+            }
+            self.pages = extracted
+            self.totalPages = extracted.count
+            self.currentPageIndex = min(max(0, pageIndex), max(0, self.totalPages - 1))
+            self.detectedLanguage = Self.detectLanguage(in: extracted.first(where: { $0.count > 40 }) ?? "")
+
+            self.activateAudioSession()
+            self.installRemoteCommands()
+            // If the user paused while the text was loading, wait for resume.
+            if self.state == .playing {
+                self.speakCurrentPage()
+            } else {
+                self.updateNowPlaying()
+            }
+        }
     }
 
     func togglePlayPause() {
@@ -94,8 +124,14 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
             state = .paused
         case .paused:
             activateAudioSession()
-            synthesizer.continueSpeaking()
             state = .playing
+            if synthesizer.isPaused {
+                synthesizer.continueSpeaking()
+            } else {
+                // Paused before the text finished loading: nothing is queued
+                // yet, so start the current page instead of resuming.
+                speakCurrentPage()
+            }
         case .idle:
             break
         }
@@ -103,25 +139,33 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func stop() {
+        loadTask?.cancel()
+        loadTask = nil
         synthesizer.stopSpeaking(at: .immediate)
         state = .idle
+        removeRemoteCommands()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
     func skipForward() {
         guard currentPageIndex + 1 < totalPages else { return }
-        synthesizer.stopSpeaking(at: .immediate)
-        currentPageIndex += 1
-        onPageChange?(currentPageIndex)
-        speakCurrentPage()
+        skip(to: currentPageIndex + 1)
     }
 
     func skipBackward() {
         guard currentPageIndex > 0 else { return }
+        skip(to: currentPageIndex - 1)
+    }
+
+    /// `stopSpeaking` clears any pause, so skipping while paused resumes
+    /// playback; reflect that in `state` so the controls don't show "Paused"
+    /// while audio is playing.
+    private func skip(to index: Int) {
         synthesizer.stopSpeaking(at: .immediate)
-        currentPageIndex -= 1
+        currentPageIndex = index
         onPageChange?(currentPageIndex)
+        if state == .paused { state = .playing }
         speakCurrentPage()
     }
 
@@ -189,33 +233,31 @@ final class ReadAloud: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     private func installRemoteCommands() {
-        guard !remoteCommandsInstalled else { return }
-        remoteCommandsInstalled = true
+        guard remoteCommandTargets.isEmpty else { return }
         let center = MPRemoteCommandCenter.shared()
-        center.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in if self?.state == .paused { self?.togglePlayPause() } }
-            return .success
+        func register(_ command: MPRemoteCommand, _ handler: @escaping @MainActor (ReadAloud) -> Void) {
+            let token = command.addTarget { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    handler(self)
+                }
+                return .success
+            }
+            remoteCommandTargets.append((command, token))
         }
-        center.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in if self?.state == .playing { self?.togglePlayPause() } }
-            return .success
+        register(center.playCommand) { if $0.state == .paused { $0.togglePlayPause() } }
+        register(center.pauseCommand) { if $0.state == .playing { $0.togglePlayPause() } }
+        register(center.togglePlayPauseCommand) { $0.togglePlayPause() }
+        register(center.nextTrackCommand) { $0.skipForward() }
+        register(center.previousTrackCommand) { $0.skipBackward() }
+        register(center.stopCommand) { $0.stop() }
+    }
+
+    private func removeRemoteCommands() {
+        for (command, token) in remoteCommandTargets {
+            command.removeTarget(token)
         }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.togglePlayPause() }
-            return .success
-        }
-        center.nextTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skipForward() }
-            return .success
-        }
-        center.previousTrackCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.skipBackward() }
-            return .success
-        }
-        center.stopCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.stop() }
-            return .success
-        }
+        remoteCommandTargets.removeAll()
     }
 
     private func updateNowPlaying() {

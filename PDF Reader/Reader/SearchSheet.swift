@@ -6,7 +6,10 @@ import PDFKit
 /// the sheet and navigates the reader to that selection.
 struct SearchSheet: View {
     let document: Document
-    let onSelect: (PDFSelection) -> Void
+    /// Called with the match's page index and its bounds in page space. The
+    /// sheet searches its own `PDFDocument` instance, so it hands back
+    /// geometry rather than a `PDFSelection` the reader's view can't use.
+    let onSelect: (_ pageIndex: Int, _ bounds: CGRect) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -14,6 +17,7 @@ struct SearchSheet: View {
     @State private var isSearching = false
     @State private var hasSearched = false
     @State private var pdf: PDFDocument?
+    @State private var searchTask: Task<Void, Never>?
 
     nonisolated private static let maxResults = 200
 
@@ -21,7 +25,7 @@ struct SearchSheet: View {
         let id = UUID()
         let pageIndex: Int
         let snippet: AttributedString
-        let selection: PDFSelection
+        let bounds: CGRect
     }
 
     var body: some View {
@@ -40,8 +44,15 @@ struct SearchSheet: View {
             }
             .task {
                 if pdf == nil {
-                    pdf = PDFDocument.opened(at: document.fileURL)
+                    let url = document.fileURL
+                    await DocumentStorage.ensureDownloaded(at: url)
+                    pdf = await Task.detached(priority: .userInitiated) {
+                        PDFDocument.opened(at: url)
+                    }.value
                 }
+            }
+            .onDisappear {
+                searchTask?.cancel()
             }
         }
     }
@@ -56,9 +67,11 @@ struct SearchSheet: View {
                 .onSubmit(runSearch)
             if !query.isEmpty {
                 Button {
+                    searchTask?.cancel()
                     query = ""
                     results = []
                     hasSearched = false
+                    isSearching = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -79,7 +92,7 @@ struct SearchSheet: View {
         } else if !results.isEmpty {
             List(results) { match in
                 Button {
-                    onSelect(match.selection)
+                    onSelect(match.pageIndex, match.bounds)
                     dismiss()
                 } label: {
                     VStack(alignment: .leading, spacing: DesignSystem.Spacing.xs) {
@@ -114,20 +127,26 @@ struct SearchSheet: View {
         isSearching = true
         hasSearched = true
 
-        Task.detached {
-            let selections = pdf.findString(trimmed, withOptions: .caseInsensitive)
-            let limited = selections.prefix(Self.maxResults)
-            let matches = limited.compactMap { selection -> Match? in
-                guard let page = selection.pages.first else { return nil }
-                let pageIndex = pdf.index(for: page)
-                guard pageIndex >= 0 else { return nil }
-                let snippet = Self.makeSnippet(for: selection, in: page, query: trimmed)
-                return Match(pageIndex: pageIndex, snippet: snippet, selection: selection)
-            }
-            await MainActor.run {
-                self.results = Array(matches)
-                self.isSearching = false
-            }
+        // One search at a time: `findString` on a shared PDFDocument isn't
+        // safe to run concurrently, and a slow earlier search must not
+        // overwrite the results of a newer query.
+        searchTask?.cancel()
+        searchTask = Task {
+            let matches = await Task.detached(priority: .userInitiated) { () -> [Match] in
+                let selections = pdf.findString(trimmed, withOptions: .caseInsensitive)
+                let limited = selections.prefix(Self.maxResults)
+                return limited.compactMap { selection -> Match? in
+                    if Task.isCancelled { return nil }
+                    guard let page = selection.pages.first else { return nil }
+                    let pageIndex = pdf.index(for: page)
+                    guard pageIndex >= 0 else { return nil }
+                    let snippet = Self.makeSnippet(for: selection, in: page, query: trimmed)
+                    return Match(pageIndex: pageIndex, snippet: snippet, bounds: selection.bounds(for: page))
+                }
+            }.value
+            guard !Task.isCancelled else { return }
+            results = matches
+            isSearching = false
         }
     }
 

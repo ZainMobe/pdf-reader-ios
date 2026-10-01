@@ -53,6 +53,7 @@ extension PDFOperations {
             document.folder = source.folder
             document.tags = source.tags
             document.isFavorite = source.isFavorite
+            document.isUnread = source.isUnread
             document.addedAt = source.addedAt
         }
         context.insert(document)
@@ -60,6 +61,7 @@ extension PDFOperations {
             DocumentPasswordStore.store(password, for: url)
         }
         if replaceOriginal {
+            DocumentStorage.transferReadingState(from: source, to: document, in: context)
             DocumentStorage.delete(source, in: context)
         }
         return document

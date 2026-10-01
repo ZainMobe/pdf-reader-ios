@@ -111,6 +111,22 @@ enum DocumentStorage {
         DocumentPasswordStore.remove(for: url)
     }
 
+    /// Moves per-document reading state (bookmarks, last page, last opened)
+    /// from `source` to `replacement`. Used by tools that "replace the
+    /// original" with a new record; without this, `delete(_:in:)` cascades
+    /// the bookmarks away and the book reopens on page 1.
+    static func transferReadingState(from source: Document, to replacement: Document, in context: ModelContext) {
+        let sourceID = source.id
+        let descriptor = FetchDescriptor<Bookmark>(predicate: #Predicate { $0.documentID == sourceID })
+        if let bookmarks = try? context.fetch(descriptor) {
+            for bookmark in bookmarks where bookmark.pageIndex < max(replacement.pageCount, 1) {
+                bookmark.documentID = replacement.id
+            }
+        }
+        replacement.lastPageIndex = min(source.lastPageIndex, max(0, replacement.pageCount - 1))
+        replacement.lastOpenedAt = source.lastOpenedAt
+    }
+
     /// Copies the file at `sourceURL` into the app's PDF storage and inserts a
     /// `Document` record into `context`. Returns the inserted document.
     @discardableResult

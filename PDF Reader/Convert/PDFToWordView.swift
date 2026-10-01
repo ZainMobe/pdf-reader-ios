@@ -126,6 +126,10 @@ struct PDFToWordView: View {
             }
             .onChange(of: selectedDoc) { _, _ in exported = nil; textPreview = nil }
             .onChange(of: format) { _, _ in exported = nil; textPreview = nil }
+            .onDisappear {
+                // The export lives in a per-run temp directory; clean it up.
+                if let exported { try? FileManager.default.removeItem(at: exported.deletingLastPathComponent()) }
+            }
         }
     }
 
@@ -148,7 +152,7 @@ struct PDFToWordView: View {
             await DocumentStorage.ensureDownloaded(at: url)
             do {
                 let result: (URL, String?) = try await Task.detached(priority: .userInitiated) {
-                    guard let pdf = PDFDocument.opened(at: url) else { throw PDFExport.ExportError.writeFailed }
+                    guard let pdf = PDFDocument.opened(at: url) else { throw PDFOperations.OpError.noSourceDocument }
                     let dir = FileManager.default.temporaryDirectory.appending(path: "PDFToWord-\(UUID().uuidString)", directoryHint: .isDirectory)
                     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
                     let file = dir.appending(path: "\(baseName).\(ext)")
@@ -168,6 +172,7 @@ struct PDFToWordView: View {
                 if let old = exported { try? FileManager.default.removeItem(at: old.deletingLastPathComponent()) }
                 exported = result.0
                 textPreview = result.1
+                EntitlementStore.shared.recordUse(.tool)
                 Haptics.success()
             } catch {
                 self.error = error.localizedDescription

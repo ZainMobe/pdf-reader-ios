@@ -12,6 +12,7 @@ struct FolderManagerView: View {
     @State private var newName = ""
     @State private var renameText = ""
     @State private var renamingFolder: Folder?
+    @State private var deletingFolder: Folder?
 
     var body: some View {
         NavigationStack {
@@ -59,7 +60,7 @@ struct FolderManagerView: View {
                             .buttonStyle(.plain)
                             .swipeActions(edge: .trailing) {
                                 Button(role: .destructive) {
-                                    modelContext.delete(folder)
+                                    deletingFolder = folder
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -70,6 +71,29 @@ struct FolderManagerView: View {
             }
             .navigationTitle("Manage Folders")
             .navigationBarTitleDisplayMode(.inline)
+            .confirmationDialog(
+                "Delete \u{201C}\(deletingFolder?.name ?? "")\u{201D}?",
+                isPresented: Binding(
+                    get: { deletingFolder != nil },
+                    set: { if !$0 { deletingFolder = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete Folder", role: .destructive) {
+                    if let folder = deletingFolder {
+                        // Documents keep their files; they just leave the folder.
+                        for document in folder.documents ?? [] { document.folder = nil }
+                        modelContext.delete(folder)
+                    }
+                    deletingFolder = nil
+                }
+                Button("Cancel", role: .cancel) { deletingFolder = nil }
+            } message: {
+                let count = deletingFolder?.documents?.count ?? 0
+                Text(count == 0
+                     ? "The folder will be removed."
+                     : "The \(count) \(count == 1 ? "document" : "documents") inside stay in your Library; only the folder is removed.")
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }

@@ -14,6 +14,10 @@ struct PaywallView: View {
     @State private var purchaseError: String?
     @State private var loadAttempted = false
     @State private var showingCelebration = false
+    /// Set only by a purchase that started a free trial, so the celebration
+    /// copy after Restore never claims a trial just began.
+    @State private var celebratesTrial = false
+    @State private var restoreMessage: String?
 
     private let features: [(systemImage: String, title: String, subtitle: String)] = [
         ("sparkles", "On-device AI", "Summarize, chat, translate — all private."),
@@ -54,6 +58,17 @@ struct PaywallView: View {
             } message: {
                 Text(purchaseError ?? "")
             }
+            .alert(
+                "Restore Purchases",
+                isPresented: Binding(
+                    get: { restoreMessage != nil },
+                    set: { if !$0 { restoreMessage = nil } }
+                )
+            ) {
+                Button("OK") { restoreMessage = nil }
+            } message: {
+                Text(restoreMessage ?? "")
+            }
             .fullScreenCover(isPresented: $showingCelebration) {
                 CelebrationView(
                     title: "You're Pro!",
@@ -68,10 +83,17 @@ struct PaywallView: View {
     }
 
     private var celebrationSubtitle: String {
-        if trialDescription(for: selectedTier) != nil {
+        if celebratesTrial {
             return "Your free trial just started.\nEvery Pro feature is unlocked."
         }
         return "Every Pro feature is now unlocked.\nThank you for supporting PDF AI."
+    }
+
+    /// True when the offering loaded but none of its products match the
+    /// identifiers this paywall knows about — the CTA would otherwise stay
+    /// disabled with no explanation.
+    private var noMatchingProducts: Bool {
+        !packages.isEmpty && SubscriptionTier.all.allSatisfy { packageFor($0) == nil }
     }
 
     private var hero: some View {
@@ -192,7 +214,7 @@ struct PaywallView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-            if packages.isEmpty {
+            if packages.isEmpty || noMatchingProducts {
                 if loadAttempted {
                     VStack(spacing: DesignSystem.Spacing.xs) {
                         Text("Couldn't load subscriptions. Check your connection and try again.")
@@ -285,6 +307,12 @@ struct PaywallView: View {
     }
 
     private func loadOfferings() async {
+        // `Purchases.shared` traps when the SDK was never configured (missing
+        // or placeholder API key). Show the "couldn't load" state instead.
+        guard Purchases.isConfigured else {
+            loadAttempted = true
+            return
+        }
         do {
             let offerings = try await Purchases.shared.offerings()
             let current = offerings.current
@@ -306,23 +334,32 @@ struct PaywallView: View {
                 eligibility = result.mapValues(\.status)
             }
         } catch {
-            purchaseError = error.localizedDescription
+            // The inline "Couldn't load subscriptions… Retry" text covers
+            // this; a "Purchase failed" alert before any tap would be wrong.
         }
         loadAttempted = true
     }
 
     private func purchase() async {
-        guard let package = packageFor(selectedTier) else { return }
+        guard Purchases.isConfigured, let package = packageFor(selectedTier) else { return }
         Haptics.impact(.medium)
         isPurchasing = true
         defer { isPurchasing = false }
+        let startsTrial = trialDescription(for: selectedTier) != nil
         do {
             let result = try await Purchases.shared.purchase(package: package)
             if result.userCancelled { return }
             await EntitlementStore.shared.refresh()
             if EntitlementStore.shared.isPro {
+                celebratesTrial = startsTrial
                 Haptics.success()
                 showingCelebration = true
+            } else {
+                // Charged but the entitlement isn't active: almost always a
+                // product-to-entitlement mapping problem in the dashboard.
+                // Say so instead of silently leaving the paywall up.
+                Haptics.error()
+                purchaseError = "Your purchase went through, but Pro isn't active yet. Try Restore Purchases in a moment, or contact support if it persists."
             }
         } catch {
             Haptics.error()
@@ -331,16 +368,23 @@ struct PaywallView: View {
     }
 
     private func restore() async {
+        guard Purchases.isConfigured else {
+            restoreMessage = "Purchases aren't available right now. Please try again later."
+            return
+        }
         do {
             _ = try await Purchases.shared.restorePurchases()
             await EntitlementStore.shared.refresh()
             if EntitlementStore.shared.isPro {
+                celebratesTrial = false
                 Haptics.success()
                 showingCelebration = true
+            } else {
+                restoreMessage = "No previous purchases were found for this Apple Account."
             }
         } catch {
             Haptics.error()
-            purchaseError = error.localizedDescription
+            restoreMessage = error.localizedDescription
         }
     }
 }

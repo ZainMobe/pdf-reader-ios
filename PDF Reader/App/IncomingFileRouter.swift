@@ -64,6 +64,11 @@ final class IncomingFileRouter {
     /// Files that arrived before `configure(container:)`; replayed once the
     /// database is ready.
     private var deferredURLs: [URL] = []
+    /// Share Extension batches currently being imported. `sweepSharedInbox`
+    /// is called from several places (launch, scene activation, URL scheme)
+    /// that can fire in the same run-loop turn; without this guard the same
+    /// batch is imported twice before the first import removes it.
+    private var importingBatchIDs = Set<String>()
 
     private init() {}
 
@@ -137,9 +142,14 @@ final class IncomingFileRouter {
     /// often; no-ops when the inbox is empty.
     func sweepSharedInbox() {
         guard let container, SharedInbox.isAvailable else { return }
-        let batches = SharedInbox.pendingBatches()
+        let batches = SharedInbox.pendingBatches().filter { !importingBatchIDs.contains($0.manifest.batchID) }
         guard !batches.isEmpty else { return }
-        Task { await importBatches(batches, container: container) }
+        let ids = batches.map(\.manifest.batchID)
+        importingBatchIDs.formUnion(ids)
+        Task {
+            await importBatches(batches, container: container)
+            importingBatchIDs.subtract(ids)
+        }
     }
 
     /// Consumes `documentToOpen`, returning the resolved document if any.
@@ -149,7 +159,17 @@ final class IncomingFileRouter {
         var descriptor = FetchDescriptor<Document>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         let document = try? context.fetch(descriptor).first
-        if document == nil { pageToOpen = nil }
+        if document == nil {
+            pageToOpen = nil
+            // A widget or Shortcut pointed at a document that has since been
+            // deleted; say so rather than silently showing the Library.
+            show(Banner(
+                title: "Document not found",
+                subtitle: "It's no longer in your library.",
+                systemImage: "doc.questionmark",
+                isError: true
+            ))
+        }
         return document
     }
 
@@ -479,6 +499,9 @@ final class IncomingFileRouter {
         case "document":
             // pdfeditor://document/<uuid>?page=<n>
             if let id = url.pathComponents.dropFirst().first.flatMap(UUID.init) {
+                // Reset first so a stale page request from an earlier link
+                // can't be applied to this (different) document.
+                pageToOpen = nil
                 if let pageText = components?.queryItems?.first(where: { $0.name == "page" })?.value,
                    let page = Int(pageText) {
                     pageToOpen = max(0, page - 1)

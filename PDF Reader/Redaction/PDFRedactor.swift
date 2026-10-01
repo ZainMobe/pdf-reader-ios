@@ -17,7 +17,7 @@ import UIKit
 ///    obvious nothing has been removed yet.
 /// 2. Applying. `apply(to:)` rasterises marked pages, replaces them, and
 ///    removes the marks. Irreversible by design.
-enum PDFRedactor {
+nonisolated enum PDFRedactor {
     /// Identifies our pending marks among a page's annotations.
     static let markerUserName = "PDFEditor.Redaction"
 
@@ -228,7 +228,14 @@ enum PDFRedactor {
         // 6. Restore the user's other annotations on the new page. Bounds are
         //    in page space; the new page has rotation 0 and display-space
         //    geometry, so map them through the same transform.
+        //
+        //    Annotations that overlap a redacted area are dropped: a highlight
+        //    stores the highlighted string in `contents`, and a sticky note
+        //    sitting over the redaction may quote it, so re-adding them would
+        //    leave the removed text readable in the annotation dictionary.
         for annotation in detached {
+            let overlapsRedaction = redactRects.contains { $0.intersects(annotation.bounds) }
+            if overlapsRedaction { continue }
             annotation.bounds = annotation.bounds.applying(transform)
             newPage.addAnnotation(annotation)
         }
@@ -291,7 +298,7 @@ enum PDFRedactor {
 }
 
 private extension UIColor {
-    var isBlackish: Bool {
+    nonisolated var isBlackish: Bool {
         var white: CGFloat = 1, alpha: CGFloat = 1
         if getWhite(&white, alpha: &alpha) { return white < 0.15 && alpha > 0.5 }
         var r: CGFloat = 1, g: CGFloat = 1, b: CGFloat = 1

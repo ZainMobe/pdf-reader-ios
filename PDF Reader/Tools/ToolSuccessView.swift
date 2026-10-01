@@ -60,6 +60,11 @@ struct ToolSuccessView: View {
         }
         .onAppear {
             Haptics.success()
+            // Free-tier tool uses are charged here, when a tool has actually
+            // produced a result, rather than when its sheet was opened.
+            if let feature = result.meteredFeature {
+                EntitlementStore.shared.recordUse(feature)
+            }
             withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
                 checkmarkScale = 1.0
                 checkmarkOpacity = 1.0
@@ -147,4 +152,7 @@ struct ToolSuccessResult {
     let title: String
     let summary: String
     let documents: [Document]
+    /// Which free-tier allowance this result consumes. `nil` for free tools
+    /// (New Blank PDF, Images to PDF).
+    var meteredFeature: ProFeature? = .tool
 }

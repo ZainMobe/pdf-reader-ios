@@ -55,7 +55,7 @@ struct LibrarySearchView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .task(id: documents.count) {
+            .task(id: indexFingerprint) {
                 await ask.refreshIndex(from: documents)
             }
             .onAppear {
@@ -74,6 +74,19 @@ struct LibrarySearchView: View {
 
     private var documentsWithTextCount: Int {
         documents.filter { !($0.ocrText ?? "").isEmpty }.count
+    }
+
+    /// Cheap change signal for re-indexing: keying only on the count missed
+    /// renames, OCR finishing and redactions that change a document's text
+    /// while this view is open.
+    private var indexFingerprint: Int {
+        var hasher = Hasher()
+        for doc in documents {
+            hasher.combine(doc.id)
+            hasher.combine(doc.title)
+            hasher.combine(doc.ocrText?.count ?? 0)
+        }
+        return hasher.finalize()
     }
 
     // MARK: - Pieces

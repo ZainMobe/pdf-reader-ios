@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 /// Decoding goes through ImageIO's thumbnailing path so a 48 MP HEIC from
 /// the camera roll is downsampled on the way in, EXIF orientation is baked
 /// in, and memory stays flat regardless of how many pages are queued.
-enum ImagesToPDF {
+nonisolated enum ImagesToPDF {
     /// Longest edge, in pixels, that any page image is allowed to keep.
     /// 2600 px is comfortably above what a 300 dpi A4 scan needs while
     /// keeping a 20-photo PDF under ~15 MB at 0.8 JPEG quality.
@@ -259,6 +259,7 @@ enum ImagesToPDF {
     /// exactly as they do on scans. Vision boxes are normalised with a
     /// bottom-left origin; the PDF context here is top-left.
     nonisolated static func drawInvisibleText(_ boxes: [OCRPipeline.RecognizedTextBox], in rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
         for box in boxes {
             let b = box.boundingBox
             let r = CGRect(
@@ -267,12 +268,27 @@ enum ImagesToPDF {
                 width: b.width * rect.width,
                 height: b.height * rect.height
             )
+            guard r.width > 0, r.height > 0, !box.string.isEmpty else { continue }
             let fontSize = max(r.height * 0.8, 4)
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: fontSize),
                 .foregroundColor: UIColor.clear,
             ]
-            NSAttributedString(string: box.string, attributes: attributes).draw(in: r)
+            let attributed = NSAttributedString(string: box.string, attributes: attributes)
+
+            // Fit the string to the box width. `draw(in:)` word-wraps and
+            // clips, so when the system font is wider than the scanned
+            // typeface the trailing words were silently dropped from the
+            // text layer; when narrower, selection didn't line up with the
+            // printed words. Scaling horizontally keeps every glyph inside
+            // the box the OCR engine reported.
+            let natural = attributed.size()
+            let sx = natural.width > 0 ? r.width / natural.width : 1
+            context.saveGState()
+            context.translateBy(x: r.minX, y: r.midY - natural.height / 2)
+            context.scaleBy(x: sx, y: 1)
+            attributed.draw(at: .zero)
+            context.restoreGState()
         }
     }
 

@@ -18,6 +18,7 @@ struct WatermarkView: View {
     @State private var opacity: Double = 0.2
     @State private var error: String?
     @State private var success: ToolSuccessResult?
+    @State private var isWorking = false
 
     var body: some View {
         NavigationStack {
@@ -86,12 +87,22 @@ struct WatermarkView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.disabled(isWorking)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Apply") { apply() }
                         .buttonStyle(.glassProminent)
-                        .disabled(!canApply)
+                        .disabled(!canApply || isWorking)
+                }
+            }
+            .overlay {
+                if isWorking {
+                    VStack(spacing: DesignSystem.Spacing.s) {
+                        ProgressView()
+                        Text("Adding watermark…").font(.subheadline)
+                    }
+                    .padding(DesignSystem.Spacing.xl)
+                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -120,20 +131,27 @@ struct WatermarkView: View {
     private func apply() {
         guard let doc = selectedDoc else { return }
         let trimmed = watermarkText.trimmingCharacters(in: .whitespacesAndNewlines)
-        do {
-            let stamped = try PDFOperations.watermark(
-                doc,
-                text: trimmed,
-                opacity: opacity,
-                in: modelContext
-            )
-            success = ToolSuccessResult(
-                title: "Watermark Added",
-                summary: "Stamped \(stamped.pageCount) \(stamped.pageCount == 1 ? "page" : "pages") with \u{201C}\(trimmed)\u{201D}",
-                documents: [stamped]
-            )
-        } catch {
-            self.error = error.localizedDescription
+        let alpha = opacity
+        isWorking = true
+        Task {
+            defer { isWorking = false }
+            await DocumentStorage.ensureDownloaded(at: doc.fileURL)
+            do {
+                let stamped = try PDFOperations.watermark(
+                    doc,
+                    text: trimmed,
+                    opacity: alpha,
+                    in: modelContext
+                )
+                try? modelContext.save()
+                success = ToolSuccessResult(
+                    title: "Watermark Added",
+                    summary: "Stamped \(stamped.pageCount) \(stamped.pageCount == 1 ? "page" : "pages") with \u{201C}\(trimmed)\u{201D}",
+                    documents: [stamped]
+                )
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

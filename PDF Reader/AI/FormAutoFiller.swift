@@ -41,24 +41,45 @@ final class FormAutoFiller {
 
         task = Task { [weak self] in
             guard let self else { return }
-            guard let pdf = PDFDocument.opened(at: url) else {
+            // Open, scan widgets and extract text off the main thread.
+            struct Scan {
+                var locked = false
+                var detected: [(pageIndex: Int, name: String, current: String)] = []
+                var documentText = ""
+            }
+            let scan: Scan? = await Task.detached(priority: .userInitiated) {
+                guard let pdf = PDFDocument.opened(at: url) else { return nil }
+                var scan = Scan()
+                if pdf.isLocked {
+                    scan.locked = true
+                    return scan
+                }
+                let textWidgetType = PDFAnnotationWidgetSubtype.text.rawValue
+                for index in 0..<pdf.pageCount {
+                    guard let page = pdf.page(at: index) else { continue }
+                    for annotation in page.annotations where annotation.type == "Widget" {
+                        guard annotation.widgetFieldType.rawValue == textWidgetType else { continue }
+                        let name = annotation.fieldName ?? "Field \(scan.detected.count + 1)"
+                        let current = annotation.widgetStringValue ?? ""
+                        scan.detected.append((index, name, current))
+                    }
+                }
+                if !scan.detected.isEmpty {
+                    scan.documentText = String((pdf.string ?? "").prefix(3_000))
+                }
+                return scan
+            }.value
+            if Task.isCancelled { return }
+
+            guard let scan else {
                 self.state = .failed("Couldn't open document.")
                 return
             }
-
-            // Collect text widgets across all pages.
-            let textWidgetType = PDFAnnotationWidgetSubtype.text.rawValue
-            var detected: [(pageIndex: Int, name: String, current: String)] = []
-            for index in 0..<pdf.pageCount {
-                guard let page = pdf.page(at: index) else { continue }
-                for annotation in page.annotations where annotation.type == "Widget" {
-                    guard annotation.widgetFieldType.rawValue == textWidgetType else { continue }
-                    let name = annotation.fieldName ?? "Field \(detected.count + 1)"
-                    let current = annotation.widgetStringValue ?? ""
-                    detected.append((index, name, current))
-                }
+            guard !scan.locked else {
+                self.state = .failed("This PDF is password-protected. Open it in the Reader and enter the password first.")
+                return
             }
-
+            let detected = scan.detected
             guard !detected.isEmpty else {
                 self.state = .noFields
                 return
@@ -67,7 +88,7 @@ final class FormAutoFiller {
             self.state = .suggesting
 
             // Build prompt with document context + field names.
-            let documentText = String((pdf.string ?? "").prefix(3_000))
+            let documentText = scan.documentText
             let fieldList = detected.enumerated()
                 .map { idx, field in "\(idx + 1). \(field.name)\(field.current.isEmpty ? "" : " (current: \(field.current))")" }
                 .joined(separator: "\n")
@@ -121,9 +142,36 @@ final class FormAutoFiller {
                 self.state = .ready
             } catch is CancellationError {
                 return
+            } catch let error as LanguageModelSession.GenerationError {
+                if Task.isCancelled { return }
+                self.state = .failed(Self.message(for: error))
             } catch {
+                if Task.isCancelled { return }
                 self.state = .failed(error.localizedDescription)
             }
+        }
+    }
+
+    private static func message(for error: LanguageModelSession.GenerationError) -> String {
+        switch error {
+        case .exceededContextWindowSize:
+            return "This form has too many fields for the on-device model to fill in one pass."
+        case .decodingFailure:
+            return "The model couldn't produce usable suggestions for this form."
+        case .guardrailViolation:
+            return "This document's content was blocked by on-device safety filters."
+        case .unsupportedLanguageOrLocale:
+            return "The on-device model doesn't support the language used in this form."
+        case .assetsUnavailable:
+            return "Apple Intelligence assets aren't ready yet. Try again in a few minutes."
+        case .rateLimited:
+            return "Too many AI requests right now. Please try again shortly."
+        case .concurrentRequests:
+            return "Another AI request is in progress. Try again in a moment."
+        case .refusal:
+            return "The model declined to suggest values for this form."
+        default:
+            return error.localizedDescription
         }
     }
 
@@ -136,19 +184,36 @@ final class FormAutoFiller {
             return
         }
 
+        guard !pdf.isLocked else {
+            state = .failed("This PDF is password-protected. Open it in the Reader and enter the password first.")
+            return
+        }
+
         let textWidgetType = PDFAnnotationWidgetSubtype.text.rawValue
         var applied = 0
         for suggestion in suggestions where suggestion.accepted && !suggestion.suggestedValue.isEmpty {
             guard let page = pdf.page(at: suggestion.pageIndex) else { continue }
+            var wroteField = false
+            // Write every widget that shares the field name (a field can have
+            // several widgets on a page); count the field once.
             for annotation in page.annotations where annotation.type == "Widget" {
                 guard
                     annotation.widgetFieldType.rawValue == textWidgetType,
                     annotation.fieldName == suggestion.fieldName
                 else { continue }
                 annotation.widgetStringValue = suggestion.suggestedValue
-                applied += 1
-                break
+                wroteField = true
             }
+            if wroteField { applied += 1 }
+        }
+
+        // PDFKit writes an unencrypted file by default. `opened(at:)` unlocked
+        // a protected form with its stored password, so re-apply it or the
+        // save would silently strip the protection.
+        var writeOptions: [PDFDocumentWriteOption: Any] = [:]
+        if let password = DocumentPasswordStore.password(for: documentURL) {
+            writeOptions[.userPasswordOption] = password
+            writeOptions[.ownerPasswordOption] = password
         }
 
         // Coordinate the write so a Reader window currently showing this
@@ -162,10 +227,12 @@ final class FormAutoFiller {
             options: .forReplacing,
             error: &coordinationError
         ) { coordinatedURL in
-            success = pdf.write(to: coordinatedURL)
+            success = writeOptions.isEmpty
+                ? pdf.write(to: coordinatedURL)
+                : pdf.write(to: coordinatedURL, withOptions: writeOptions)
         }
 
-        guard success else {
+        guard success, coordinationError == nil else {
             state = .failed("Couldn't save changes.")
             return
         }

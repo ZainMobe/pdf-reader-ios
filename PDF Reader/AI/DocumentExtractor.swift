@@ -50,15 +50,21 @@ final class DocumentExtractor {
         task?.cancel()
         state = .loading
         let title = document.title
-        let text = Self.extractText(document)
-
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            state = .failed("This document doesn't have extractable text.")
-            return
-        }
+        let url = document.fileURL
+        let fallback = document.ocrText
 
         task = Task { [weak self] in
             guard let self else { return }
+            // Full-document text extraction off the main thread.
+            let text = await Task.detached(priority: .userInitiated) {
+                Self.extractText(at: url, fallback: fallback)
+            }.value
+            if Task.isCancelled { return }
+
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                self.state = .failed("This document doesn't have extractable text.")
+                return
+            }
             do {
                 let data = try await Self.runExtraction(
                     title: title,
@@ -156,12 +162,12 @@ final class DocumentExtractor {
         return error.localizedDescription
     }
 
-    private static func extractText(_ document: Document) -> String {
-        if let pdf = PDFDocument.opened(at: document.fileURL),
+    nonisolated private static func extractText(at url: URL, fallback: String?) -> String {
+        if let pdf = PDFDocument.opened(at: url),
            let body = pdf.string,
            !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return body
         }
-        return document.ocrText ?? ""
+        return fallback ?? ""
     }
 }

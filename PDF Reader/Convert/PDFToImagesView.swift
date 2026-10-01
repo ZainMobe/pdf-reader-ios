@@ -200,6 +200,7 @@ struct PDFToImagesView: View {
                 error = "No pages could be rendered."
                 return
             }
+            EntitlementStore.shared.recordUse(.tool)
 
             switch dest {
             case .share:

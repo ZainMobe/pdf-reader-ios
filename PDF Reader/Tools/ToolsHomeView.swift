@@ -212,12 +212,16 @@ struct ToolsHomeView: View {
         if entitlements.isPro {
             row(title, systemImage: systemImage, subtitle: subtitle)
         } else {
+            let _ = entitlements.usageVersion
             row("\(title) \(FreeTier.suffix(for: .tool))", systemImage: systemImage, subtitle: subtitle)
         }
     }
 
+    /// Opens a Pro tool sheet if the user may use it. The free-tier use is
+    /// recorded by `ToolSuccessView` once the tool actually produces output,
+    /// so opening a sheet and cancelling costs nothing.
     private func gated(_ action: () -> Void) {
-        if entitlements.unlock(.tool) {
+        if entitlements.canUse(.tool) {
             action()
         } else {
             showingPaywall = true

@@ -80,6 +80,7 @@ extension PDFOperations {
         }
 
         if request.replaceOriginal {
+            DocumentStorage.transferReadingState(from: source, to: document, in: context)
             DocumentStorage.delete(source, in: context)
         }
         return document

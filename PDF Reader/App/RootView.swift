@@ -26,6 +26,10 @@ struct RootView: View {
     @State private var isProcessingScan = false
     @State private var showingAskLibrary = false
     @State private var askLibraryQuery = ""
+    @State private var showingPaywall = false
+    /// Action that arrived while onboarding is covering the screen; replayed
+    /// once onboarding finishes so a cold-launch Quick Action isn't dropped.
+    @State private var actionAfterOnboarding: IncomingFileRouter.AppAction?
 
     private let incomingRouter = IncomingFileRouter.shared
 
@@ -86,6 +90,9 @@ struct RootView: View {
         .fullScreenCover(isPresented: $showingAskLibrary) {
             LibrarySearchView(initialQuery: askLibraryQuery)
         }
+        .sheet(isPresented: $showingPaywall) {
+            PaywallView()
+        }
         .overlay(alignment: .top) {
             if let banner = incomingRouter.banner {
                 IncomingFileBanner(banner: banner)
@@ -131,11 +138,26 @@ struct RootView: View {
                 hasSeenOnboarding = true
             }
         }
+        .onChange(of: hasSeenOnboarding) { _, seen in
+            guard seen, let action = actionAfterOnboarding else { return }
+            actionAfterOnboarding = nil
+            // Let the onboarding cover finish dismissing before presenting.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(400))
+                perform(action)
+            }
+        }
     }
 
     // MARK: - Action handlers
 
     private func perform(_ action: IncomingFileRouter.AppAction) {
+        // SwiftUI can't present a second full-screen cover while onboarding
+        // is up; hold the action until onboarding completes.
+        guard hasSeenOnboarding else {
+            actionAfterOnboarding = action
+            return
+        }
         // Dismiss anything modal first so the requested surface is visible.
         showingImporter = false
         showingNewBlank = false
@@ -153,8 +175,12 @@ struct RootView: View {
         case .askLibrary(let query):
             selection = .ai
             askLibraryQuery = query
-            if EntitlementStore.shared.isPro {
+            // Same metering as the in-app entry points: free users get their
+            // daily allowance, and see the paywall (not nothing) when it's gone.
+            if EntitlementStore.shared.unlock(.aiAction) {
                 showingAskLibrary = true
+            } else {
+                showingPaywall = true
             }
         case .openTools:
             selection = .tools

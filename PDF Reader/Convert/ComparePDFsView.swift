@@ -79,6 +79,7 @@ struct ComparePDFsView: View {
                 result = try await Task.detached(priority: .userInitiated) {
                     try PDFCompare.compare(urlA, urlB)
                 }.value
+                EntitlementStore.shared.recordUse(.tool)
                 Haptics.success()
             } catch {
                 self.error = error.localizedDescription

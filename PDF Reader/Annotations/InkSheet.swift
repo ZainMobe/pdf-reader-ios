@@ -59,20 +59,28 @@ struct InkSheet: View {
                         .buttonStyle(.glassProminent)
                 }
             }
-            .task { renderPage() }
+            .task { await renderPage() }
         }
     }
 
-    private func renderPage() {
-        guard
-            let pdf = PDFDocument.opened(at: document.fileURL),
-            let page = pdf.page(at: pageIndex)
-        else { return }
-        let bounds = page.bounds(for: .cropBox)
-        pageSize = bounds.size
-        let scale: CGFloat = 2
-        let renderSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
-        pageImage = page.thumbnail(of: renderSize, for: .cropBox)
+    /// Renders the page off the main thread. At 2x on a large page this can
+    /// take several seconds; doing it inline froze the sheet mid-presentation.
+    private func renderPage() async {
+        let url = document.fileURL
+        let index = pageIndex
+        let result: (CGSize, UIImage)? = await Task.detached(priority: .userInitiated) {
+            guard
+                let pdf = PDFDocument.opened(at: url),
+                let page = pdf.page(at: index)
+            else { return nil }
+            let bounds = page.bounds(for: .cropBox)
+            let scale: CGFloat = 2
+            let renderSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+            return (bounds.size, page.thumbnail(of: renderSize, for: .cropBox))
+        }.value
+        guard let result, !Task.isCancelled else { return }
+        pageSize = result.0
+        pageImage = result.1
     }
 
     private func commitAndDismiss() {

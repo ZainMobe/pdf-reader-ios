@@ -209,6 +209,7 @@ struct AIAssistantView: View {
                 ],
                 spacing: DesignSystem.Spacing.m
             ) {
+                let _ = entitlements.usageVersion
                 ForEach(AIAction.allCases) { action in
                     Button {
                         tap(action: action)
@@ -280,9 +281,11 @@ struct AIAssistantView: View {
 
     // MARK: - Routing
 
+    /// Pickers are free to open and cancel; the free-tier use is charged in
+    /// `launch(_:)` once a document and an action have both been chosen.
     private func tap(action: AIAction) {
         Haptics.impact(.light)
-        guard entitlements.unlock(.aiAction) else {
+        guard entitlements.canUse(.aiAction) else {
             showingPaywall = true
             return
         }
@@ -291,7 +294,7 @@ struct AIAssistantView: View {
 
     private func tap(document: Document) {
         Haptics.impact(.light)
-        guard entitlements.unlock(.aiAction) else {
+        guard entitlements.canUse(.aiAction) else {
             showingPaywall = true
             return
         }
@@ -300,16 +303,28 @@ struct AIAssistantView: View {
 
     private func launchFromDocPickerIfNeeded() {
         if let captured = capturedFromDocPicker {
-            pendingLaunch = captured
             capturedFromDocPicker = nil
+            launch(captured)
         }
     }
 
     private func launchFromActionPickerIfNeeded() {
         if let captured = capturedFromActionPicker {
-            pendingLaunch = captured
             capturedFromActionPicker = nil
+            launch(captured)
         }
+    }
+
+    private func launch(_ launch: PendingLaunch) {
+        // Auto-Fill charges on Apply (see FormFillSheet); the others start
+        // generating as soon as their sheet opens.
+        if launch.action != .autoFill {
+            guard entitlements.unlock(.aiAction) else {
+                showingPaywall = true
+                return
+            }
+        }
+        pendingLaunch = launch
     }
 
     @ViewBuilder

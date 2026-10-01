@@ -29,6 +29,10 @@ struct ReaderView: View {
     @State private var showingInfo = false
     @State private var exportedAnnotations: ExportedFile?
     @State private var isLocked = false
+    /// True when the file can't be opened at all (not downloaded yet,
+    /// corrupt, missing). Shows a retry state instead of a blank PDFView.
+    @State private var openFailed = false
+    @State private var isPreparing = true
     @State private var showingPasswordSheet = false
     @State private var passwordError: String?
     @State private var showingSignatureSheet = false
@@ -78,7 +82,12 @@ struct ReaderView: View {
 
     var body: some View {
         Group {
-            if isLocked {
+            if isPreparing {
+                ProgressView("Opening…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if openFailed {
+                openFailedPlaceholder
+            } else if isLocked {
                 lockedPlaceholder
             } else {
                 PDFKitView(
@@ -142,6 +151,7 @@ struct ReaderView: View {
                 .textInputAutocapitalization(.never)
             Button("Mark All") {
                 let r = controller.redactOccurrences(of: findRedactText)
+                if r.marks > 0 { entitlements.recordUse(.editing) }
                 findRedactResult = r.marks == 0
                     ? "No matches for \"\(findRedactText)\"."
                     : "Marked \(r.marks) \(r.marks == 1 ? "match" : "matches") on \(r.pages) \(r.pages == 1 ? "page" : "pages"). Review them, then choose Apply Redactions."
@@ -175,9 +185,31 @@ struct ReaderView: View {
         } message: {
             Text(redactionError ?? "")
         }
+        .alert("Couldn't save", isPresented: Binding(
+            get: { controller.saveError != nil }, set: { if !$0 { controller.saveError = nil } }
+        )) {
+            Button("OK") { controller.saveError = nil }
+        } message: {
+            Text(controller.saveError ?? "")
+        }
         .onAppear {
             controller.onPageChanged = { [document] index in
                 if document.lastPageIndex != index { document.lastPageIndex = index }
+            }
+            // Keep the Library card and file size in step with what was just
+            // written; the persisted thumbnail otherwise shows the pre-edit
+            // first page forever.
+            controller.onSaved = { [document] in
+                let url = document.fileURL
+                Task {
+                    let data = await Task.detached(priority: .utility) {
+                        ThumbnailGenerator.persistableThumbnailData(at: url)
+                    }.value
+                    if let data { document.thumbnailData = data }
+                    if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int64 {
+                        document.fileSize = size
+                    }
+                }
             }
         }
         .preferredColorScheme(readerTheme.prefersDarkChrome ? .dark : nil)
@@ -190,9 +222,12 @@ struct ReaderView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
+                // Flush the debounced annotation save first so the shared
+                // file includes an edit made a moment ago.
                 ShareLink(item: document.fileURL) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
+                .simultaneousGesture(TapGesture().onEnded { controller.flushSave() })
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -227,7 +262,14 @@ struct ReaderView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
-                    gated(.signing) { showingSignatureSheet = true }
+                    // Non-consuming check: the signature allowance is charged
+                    // when a signature is actually placed, not when the
+                    // picker is opened and cancelled.
+                    if entitlements.canUse(.signing) {
+                        showingSignatureSheet = true
+                    } else {
+                        showingPaywall = true
+                    }
                 } label: {
                     proLabel("Sign", systemImage: "signature")
                 }
@@ -259,8 +301,8 @@ struct ReaderView: View {
             }
         }
         .sheet(isPresented: $showingSearch) {
-            SearchSheet(document: document) { selection in
-                controller.navigate(to: selection)
+            SearchSheet(document: document) { pageIndex, bounds in
+                controller.navigate(toPageIndex: pageIndex, bounds: bounds)
             }
         }
         .sheet(isPresented: $showingInfo) {
@@ -308,11 +350,13 @@ struct ReaderView: View {
                     onPageAt: trigger.pageIndex
                 )
                 document.isSigned = true
+                entitlements.recordUse(.signing)
                 ReviewPrompt.requestIfNeeded(using: requestReview)
             }
         }
         .sheet(isPresented: $showingPageEditor) {
             PageEditorView(document: document) {
+                entitlements.recordUse(.editing)
                 pdfReloadToken = UUID()
             }
         }
@@ -326,8 +370,8 @@ struct ReaderView: View {
                 document: document,
                 currentPageIndex: sidebarSnapshotPageIndex,
                 onNavigatePage: { index in controller.goToPage(index) },
-                onNavigateDestination: { destination in controller.go(to: destination) },
-                onNavigateAnnotation: { annotation in controller.navigate(to: annotation) }
+                onNavigateDestination: { index, point in controller.go(toPageIndex: index, point: point) },
+                onNavigateAnnotation: { index, bounds in controller.navigate(toAnnotationAtPageIndex: index, bounds: bounds) }
             )
         }
         .sheet(isPresented: $showingPaywall) {
@@ -339,7 +383,10 @@ struct ReaderView: View {
             Button("Add") {
                 let value = newTextContent
                 newTextContent = ""
-                controller.addText(value)
+                if !value.trimmingCharacters(in: .whitespaces).isEmpty {
+                    controller.addText(value)
+                    entitlements.recordUse(.editing)
+                }
             }
         } message: {
             Text("Text appears at the center of the current page. Tap and drag to reposition after adding.")
@@ -364,11 +411,14 @@ struct ReaderView: View {
                 displayDirection = PDFDisplayDirection(rawValue: defaultDisplayDirectionRaw) ?? .vertical
                 didApplyDefaults = true
             }
-            checkLockStatus()
+            await prepareDocument()
             document.lastOpenedAt = Date()
             document.isUnread = false
         }
         .onDisappear {
+            // Speech would otherwise keep going (and keep other apps ducked)
+            // after the reader is popped.
+            readAloud.stop()
             controller.flushSave()
             controller.disconnect()
         }
@@ -408,27 +458,46 @@ struct ReaderView: View {
     private var editMenu: some View {
         Menu {
             Button {
-                gated { showingAddText = true }
+                // Charged when the text is actually added, not on Cancel.
+                if entitlements.canUse(.editing) {
+                    showingAddText = true
+                } else {
+                    showingPaywall = true
+                }
             } label: {
                 proItem("Add Text", systemImage: "character.textbox")
             }
             Menu {
                 Button {
+                    // Nothing selected is a no-op; don't charge for it.
+                    guard controller.hasTextSelection else {
+                        Haptics.warning()
+                        return
+                    }
                     gated { controller.redactSelection() }
                 } label: {
                     Label("Mark Selected Text", systemImage: "text.badge.minus")
                 }
                 Button {
-                    gated { controller.isRedactingArea.toggle() }
+                    if controller.isRedactingArea {
+                        // Turning the mode off is free.
+                        controller.isRedactingArea = false
+                    } else {
+                        gated { controller.isRedactingArea = true }
+                    }
                 } label: {
                     Label(controller.isRedactingArea ? "Stop Marking Areas" : "Mark an Area",
                           systemImage: controller.isRedactingArea ? "xmark.rectangle" : "rectangle.dashed")
                 }
                 Button {
-                    gated {
+                    // The allowance is charged in the alert's "Mark All"
+                    // action once matches are actually marked.
+                    if entitlements.canUse(.editing) {
                         findRedactText = ""
                         findRedactResult = nil
                         showingFindRedact = true
+                    } else {
+                        showingPaywall = true
                     }
                 } label: {
                     Label("Find and Mark…", systemImage: "text.magnifyingglass")
@@ -456,7 +525,12 @@ struct ReaderView: View {
             }
             Divider()
             Button {
-                gated { showingPageEditor = true }
+                // Charged when the page editor saves, not on Cancel.
+                if entitlements.canUse(.editing) {
+                    showingPageEditor = true
+                } else {
+                    showingPaywall = true
+                }
             } label: {
                 proItem("Edit Pages", systemImage: "rectangle.stack")
             }
@@ -488,7 +562,12 @@ struct ReaderView: View {
                 proItem("Extract Data", systemImage: "tablecells")
             }
             Button {
-                gated(.aiAction) { showingFormFill = true }
+                // Auto-Fill charges its free-tier use on Apply.
+                if entitlements.canUse(.aiAction) {
+                    showingFormFill = true
+                } else {
+                    showingPaywall = true
+                }
             } label: {
                 proItem("Auto-Fill Form", systemImage: "checklist")
             }
@@ -579,14 +658,42 @@ struct ReaderView: View {
         }
     }
 
-    /// Decides whether the reader has to ask for a password.
+    private var openFailedPlaceholder: some View {
+        ContentUnavailableView {
+            Label("Couldn't Open This PDF", systemImage: "icloud.slash")
+        } description: {
+            Text(DocumentStorage.isUsingICloud
+                 ? "The file may still be downloading from iCloud, or it could be damaged."
+                 : "The file may be missing or damaged.")
+        } actions: {
+            Button("Try Again") {
+                Task { await prepareDocument() }
+            }
+            .buttonStyle(.glassProminent)
+        }
+    }
+
+    /// Makes sure the file is local, then decides whether the reader has to
+    /// ask for a password or show a failure state.
     ///
     /// `PDFDocument.opened(at:)` already applies a password we accepted on a
     /// previous open, so a document the user has unlocked before comes back
     /// unlocked and the prompt never appears again.
-    private func checkLockStatus() {
-        guard let pdf = PDFDocument.opened(at: document.fileURL) else { return }
-        if pdf.isLocked {
+    private func prepareDocument() async {
+        isPreparing = true
+        let url = document.fileURL
+        await DocumentStorage.ensureDownloaded(at: url)
+        let status = await Task.detached(priority: .userInitiated) { () -> Bool? in
+            guard let pdf = PDFDocument.opened(at: url) else { return nil }
+            return pdf.isLocked
+        }.value
+        isPreparing = false
+        guard let locked = status else {
+            openFailed = true
+            return
+        }
+        openFailed = false
+        if locked {
             isLocked = true
             passwordError = nil
             showingPasswordSheet = true
@@ -662,7 +769,9 @@ struct ReaderView: View {
         }
     }
 
-    /// Runs `action` if the user is Pro, otherwise presents the paywall.
+    /// Runs `action` if the user is Pro or has a free-tier use left (which is
+    /// consumed), otherwise presents the paywall. Only for actions that take
+    /// effect immediately; use `canUse` + `recordUse` for sheets and alerts.
     private func gated(_ feature: ProFeature = .editing, _ action: () -> Void) {
         if entitlements.unlock(feature) {
             action()
@@ -674,11 +783,12 @@ struct ReaderView: View {
     /// Pro menu item label. Keeps the real icon for discoverability and only
     /// appends "(Pro)" to the title when the feature is locked.
     @ViewBuilder
-    private func proItem(_ title: String, systemImage: String) -> some View {
+    private func proItem(_ title: String, systemImage: String, feature: ProFeature = .editing) -> some View {
         if entitlements.isPro {
             Label(title, systemImage: systemImage)
         } else {
-            Label("\(title) \(FreeTier.suffix(for: .editing))", systemImage: systemImage)
+            let _ = entitlements.usageVersion
+            Label("\(title) \(FreeTier.suffix(for: feature))", systemImage: systemImage)
         }
     }
 

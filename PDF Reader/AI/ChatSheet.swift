@@ -60,9 +60,16 @@ struct ChatSheet: View {
             } message: {
                 Text("This clears the current messages and starts fresh.")
             }
-            .onAppear {
+            .task {
                 if !checkedContent {
-                    chat = DocumentChat(document: document)
+                    // Extract off the main thread so the sheet doesn't freeze
+                    // mid-presentation on long documents.
+                    let url = document.fileURL
+                    let fallback = document.ocrText
+                    let text = await Task.detached(priority: .userInitiated) {
+                        DocumentChat.extractText(at: url, fallback: fallback)
+                    }.value
+                    chat = DocumentChat(document: document, documentText: text)
                     checkedContent = true
                 }
             }
@@ -355,9 +362,16 @@ struct ChatSheet: View {
 
     private func resetConversation() {
         chat?.cancel()
-        chat = DocumentChat(document: document)
         inputText = ""
         Haptics.success()
+        let url = document.fileURL
+        let fallback = document.ocrText
+        Task {
+            let text = await Task.detached(priority: .userInitiated) {
+                DocumentChat.extractText(at: url, fallback: fallback)
+            }.value
+            chat = DocumentChat(document: document, documentText: text)
+        }
     }
 }
 

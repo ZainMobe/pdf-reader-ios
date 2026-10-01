@@ -37,23 +37,36 @@ enum ScanToPDF {
         let filename = "\(id.uuidString).pdf"
         let destinationURL = DocumentStorage.pdfStorageDirectory.appending(path: filename)
 
-        // Use the first image's bounds for the renderer's default; each
-        // page resets its own bounds via beginPage(withBounds:pageInfo:).
-        let firstBounds = CGRect(origin: .zero, size: images[0].size)
-        let renderer = UIGraphicsPDFRenderer(bounds: firstBounds)
-
-        let data = renderer.pdfData { ctx in
-            for (pageIndex, image) in images.enumerated() {
-                let pageRect = CGRect(origin: .zero, size: image.size)
-                ctx.beginPage(withBounds: pageRect, pageInfo: [:])
-                image.draw(in: pageRect)
-
-                let boxes = pageIndex < ocrByPage.count ? ocrByPage[pageIndex] : []
-                drawInvisibleText(boxes, in: pageRect)
+        // Render off the main thread. Pages are sized in points via the
+        // shared `ImagesToPDF` layout (longest edge 792 pt) rather than the
+        // camera's pixel dimensions, and the bitmap is capped and embedded
+        // as JPEG. The previous path produced 42"x56" pages holding
+        // uncompressed 12 MP bitmaps — 150 MB+ for a ten-page scan.
+        let options = ImagesToPDF.Options(pageSize: .fitImage, jpegQuality: 0.8)
+        let data = await Task.detached(priority: .userInitiated) { () -> Data in
+            let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: 612, height: 792))
+            return renderer.pdfData { ctx in
+                for (pageIndex, original) in images.enumerated() {
+                    autoreleasepool {
+                        let image = ImagesToPDF.capped(original)
+                        let (pageRect, drawRect) = ImagesToPDF.layout(for: image.size, options: options)
+                        ctx.beginPage(withBounds: pageRect, pageInfo: [:])
+                        if let jpeg = image.jpegData(compressionQuality: options.jpegQuality),
+                           let compact = UIImage(data: jpeg) {
+                            compact.draw(in: drawRect)
+                        } else {
+                            image.draw(in: drawRect)
+                        }
+                        // Vision boxes are normalised, so they map onto the
+                        // scaled draw rect unchanged.
+                        let boxes = pageIndex < ocrByPage.count ? ocrByPage[pageIndex] : []
+                        ImagesToPDF.drawInvisibleText(boxes, in: drawRect)
+                    }
+                }
             }
-        }
+        }.value
 
-        try data.write(to: destinationURL)
+        try data.write(to: destinationURL, options: [.atomic])
 
         let fileSize = (try? FileManager.default
             .attributesOfItem(atPath: destinationURL.path)[.size] as? Int64) ?? 0
@@ -71,34 +84,10 @@ enum ScanToPDF {
             pageCount: images.count
         )
         document.ocrText = aggregateText.isEmpty ? nil : aggregateText
-        document.thumbnailData = ThumbnailGenerator.persistableThumbnailData(at: destinationURL)
+        document.thumbnailData = await Task.detached(priority: .utility) {
+            ThumbnailGenerator.persistableThumbnailData(at: destinationURL)
+        }.value
         context.insert(document)
         return document
-    }
-
-    /// Draws each OCR'd region as a clear-color string sized to its bounding
-    /// box. The glyphs land in the PDF content stream (so PDFKit can find
-    /// and select them) but render with zero alpha — visually undetectable.
-    private static func drawInvisibleText(
-        _ boxes: [OCRPipeline.RecognizedTextBox],
-        in pageRect: CGRect
-    ) {
-        for box in boxes {
-            // Vision: normalized [0,1], origin bottom-left in image space.
-            // PDF context (UIKit-style): origin top-left, in points.
-            let bbox = box.boundingBox
-            let rect = CGRect(
-                x: bbox.minX * pageRect.width,
-                y: (1 - bbox.maxY) * pageRect.height,
-                width: bbox.width * pageRect.width,
-                height: bbox.height * pageRect.height
-            )
-            let fontSize = max(rect.height * 0.8, 6)
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: UIFont.systemFont(ofSize: fontSize),
-                .foregroundColor: UIColor.clear,
-            ]
-            NSAttributedString(string: box.string, attributes: attributes).draw(in: rect)
-        }
     }
 }

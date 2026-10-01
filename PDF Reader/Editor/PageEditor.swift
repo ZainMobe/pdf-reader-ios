@@ -65,6 +65,15 @@ final class PageEditor {
         // Coordinate the write so any open Reader windows on this URL
         // pick up the change (via their NSFilePresenter) without racing
         // with a debounced annotation save.
+        //
+        // Write to a temp file first and swap it in: `PDFDocument.write(to:)`
+        // streams straight onto the target, so a failure mid-write (disk
+        // full, suspension) would leave the only copy truncated.
+        var writeOptions: [PDFDocumentWriteOption: Any] = [:]
+        if let password = DocumentPasswordStore.password(for: originalURL) {
+            writeOptions[.userPasswordOption] = password
+            writeOptions[.ownerPasswordOption] = password
+        }
         let coordinator = NSFileCoordinator()
         var success = false
         var coordinationError: NSError?
@@ -73,9 +82,21 @@ final class PageEditor {
             options: .forReplacing,
             error: &coordinationError
         ) { coordinatedURL in
-            success = document.write(to: coordinatedURL)
+            let temp = FileManager.default.temporaryDirectory
+                .appending(path: "\(UUID().uuidString).pdf")
+            defer { try? FileManager.default.removeItem(at: temp) }
+            let wrote = writeOptions.isEmpty
+                ? document.write(to: temp)
+                : document.write(to: temp, withOptions: writeOptions)
+            guard wrote else { return }
+            do {
+                _ = try FileManager.default.replaceItemAt(coordinatedURL, withItemAt: temp)
+                success = true
+            } catch {
+                success = false
+            }
         }
 
-        guard success else { throw EditError.writeFailed }
+        guard success, coordinationError == nil else { throw EditError.writeFailed }
     }
 }

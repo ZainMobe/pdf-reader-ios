@@ -10,7 +10,7 @@ import Foundation
 /// Writer: stored (uncompressed) entries with CRC-32, which is a valid
 /// archive every consumer accepts. Used to produce .docx files; the text
 /// parts are tiny and embedded JPEGs don't compress anyway.
-enum ZipArchive {
+nonisolated enum ZipArchive {
     enum ZipError: LocalizedError {
         case notAZip
         case unsupportedCompression(Int)

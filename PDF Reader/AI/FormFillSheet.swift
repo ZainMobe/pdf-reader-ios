@@ -100,7 +100,12 @@ struct FormFillSheet: View {
         VStack(spacing: DesignSystem.Spacing.s) {
             Button {
                 filler.apply(to: document.fileURL)
-                onApplied()
+                // Only tell the host (which reloads its PDFView) when the
+                // write actually succeeded.
+                if case .done = filler.state {
+                    EntitlementStore.shared.recordUse(.aiAction)
+                    onApplied()
+                }
             } label: {
                 Text("Apply \(acceptedCount) Suggestion\(acceptedCount == 1 ? "" : "s")")
                     .frame(maxWidth: .infinity)

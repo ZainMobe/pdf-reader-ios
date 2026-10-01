@@ -11,6 +11,7 @@ struct SplitPDFView: View {
     @State private var splitAfter = 1
     @State private var error: String?
     @State private var success: ToolSuccessResult?
+    @State private var isWorking = false
 
     private var splittable: [Document] {
         documents.filter { $0.pageCount > 1 }
@@ -82,12 +83,22 @@ struct SplitPDFView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.disabled(isWorking)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Split") { split() }
                         .buttonStyle(.glassProminent)
-                        .disabled(selectedDoc == nil)
+                        .disabled(selectedDoc == nil || isWorking)
+                }
+            }
+            .overlay {
+                if isWorking {
+                    VStack(spacing: DesignSystem.Spacing.s) {
+                        ProgressView()
+                        Text("Splitting…").font(.subheadline)
+                    }
+                    .padding(DesignSystem.Spacing.xl)
+                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -105,15 +116,22 @@ struct SplitPDFView: View {
 
     private func split() {
         guard let doc = selectedDoc else { return }
-        do {
-            let parts = try PDFOperations.split(doc, atPage: splitAfter, in: modelContext)
-            success = ToolSuccessResult(
-                title: "PDF Split",
-                summary: "Created 2 parts — \(parts.firstPart.pageCount) + \(parts.secondPart.pageCount) pages",
-                documents: [parts.firstPart, parts.secondPart]
-            )
-        } catch {
-            self.error = error.localizedDescription
+        let at = splitAfter
+        isWorking = true
+        Task {
+            defer { isWorking = false }
+            await DocumentStorage.ensureDownloaded(at: doc.fileURL)
+            do {
+                let parts = try PDFOperations.split(doc, atPage: at, in: modelContext)
+                try? modelContext.save()
+                success = ToolSuccessResult(
+                    title: "PDF Split",
+                    summary: "Created 2 parts — \(parts.firstPart.pageCount) + \(parts.secondPart.pageCount) pages",
+                    documents: [parts.firstPart, parts.secondPart]
+                )
+            } catch {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

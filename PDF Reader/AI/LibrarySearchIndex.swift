@@ -62,7 +62,13 @@ actor LibrarySearchIndex {
         let live = Set(snapshots.map(\.id))
         for id in cache.keys where !live.contains(id) { cache[id] = nil }
         for snap in snapshots {
-            let key = snap.text.count &* 31 &+ snap.text.hashValue
+            // The title is baked into every passage, so a rename must
+            // invalidate the cached chunks too.
+            var hasher = Hasher()
+            hasher.combine(snap.text.count)
+            hasher.combine(snap.text)
+            hasher.combine(snap.title)
+            let key = hasher.finalize()
             if let cached = cache[snap.id], cached.key == key { continue }
             cache[snap.id] = CachedDocument(key: key, passages: Self.chunk(snap))
         }

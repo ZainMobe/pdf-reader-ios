@@ -157,12 +157,16 @@ struct ProtectPDFView: View {
                 Toggle("Replace original in Library", isOn: $replaceOriginal)
                 Toggle("Remember password on this device", isOn: $rememberOnThisDevice)
             } footer: {
-                Text(replaceOriginal
-                     ? "The unprotected file is deleted from this device and iCloud. "
-                     : "A protected copy is added next to the original. ")
-                + Text(rememberOnThisDevice
-                       ? "The password is kept in your Keychain so the file opens here without asking."
-                       : "You'll be asked for the password the next time you open it.")
+                // Keep each sentence a separate catalog key (localizable) and
+                // compose them with Text interpolation, which replaces the
+                // deprecated `Text + Text`.
+                let first: LocalizedStringKey = replaceOriginal
+                    ? "The unprotected file is deleted from this device and iCloud."
+                    : "A protected copy is added next to the original."
+                let second: LocalizedStringKey = rememberOnThisDevice
+                    ? "The password is kept in your Keychain so the file opens here without asking."
+                    : "You'll be asked for the password the next time you open it."
+                Text("\(Text(first)) \(Text(second))")
             }
         }
     }
