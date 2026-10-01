@@ -42,6 +42,14 @@ struct ExtractSheet: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
+                    if case .done(let data) = extractor.state {
+                        ShareLink(item: formatted(data), subject: Text("Extracted from \(document.title)")) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .accessibilityLabel("Share extracted data")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }

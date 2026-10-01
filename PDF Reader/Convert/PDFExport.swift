@@ -93,13 +93,29 @@ nonisolated enum PDFExport {
         var imageDPI: CGFloat = 150
     }
 
-    /// Builds a .docx: one section per PDF page, paragraphs reconstructed
-    /// from the text layer, page breaks between pages, and page images for
-    /// pages without text. Returns the file bytes.
+    /// Builds a .docx that keeps the document's formatting: headings, fonts,
+    /// bold/italic, colours, alignment, indents, lists, column tabs, embedded
+    /// images and vector graphics, plus the original page size and margins.
+    /// Pages without a text layer are embedded as page images. See
+    /// `WordExporter` for the layout analysis.
     nonisolated static func docx(from pdf: PDFDocument, title: String, options: WordOptions = WordOptions()) throws -> Data {
         if pdf.isLocked { throw ExportError.locked }
         guard pdf.pageCount > 0 else { throw ExportError.noPages }
 
+        var exportOptions = WordExporter.Options()
+        exportOptions.embedScannedPages = options.embedImagesForScannedPages
+        exportOptions.imageDPI = options.imageDPI
+        do {
+            return try WordExporter.docx(from: pdf, title: title, options: exportOptions)
+        } catch WordExporter.ExportFailure.nothingToExport {
+            // Nothing the analyser could use; fall back to the plain-text
+            // paragraph export below so the user still gets their words.
+        }
+        return try plainDocx(from: pdf, title: title, options: options)
+    }
+
+    /// Text-only .docx used as a fallback when layout analysis yields nothing.
+    nonisolated private static func plainDocx(from pdf: PDFDocument, title: String, options: WordOptions) throws -> Data {
         var body = ""
         var media: [(name: String, data: Data)] = []
         var relationships = ""

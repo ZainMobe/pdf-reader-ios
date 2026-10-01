@@ -116,6 +116,17 @@ struct ToolSuccessView: View {
 
             Spacer()
 
+            // Every converter ends with a way to get the file out, not just
+            // into the Library.
+            ShareLink(item: doc.fileURL) {
+                Image(systemName: "square.and.arrow.up")
+                    .font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, DesignSystem.Spacing.s)
+                    .padding(.vertical, DesignSystem.Spacing.s)
+            }
+            .buttonStyle(.glass)
+            .accessibilityLabel("Share \(doc.title)")
+
             Button {
                 Haptics.impact(.light)
                 let id = doc.id

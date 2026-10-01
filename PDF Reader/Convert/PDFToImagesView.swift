@@ -20,8 +20,12 @@ struct PDFToImagesView: View {
     @State private var progress: Double = 0
     @State private var progressText = ""
     @State private var error: String?
-    @State private var shareItems: [URL]?
-    @State private var doneMessage: String?
+    /// Set on success; replaces the form with a preview + share screen.
+    @State private var result: ExportResult?
+    /// Temp directory holding the rendered images; removed when replaced
+    /// or when the sheet closes (Share, Files and Photos all copy).
+    @State private var outputDirectory: URL?
+    @State private var photosMessage: String?
 
     enum Destination: String, CaseIterable, Identifiable {
         case photos, share
@@ -33,6 +37,70 @@ struct PDFToImagesView: View {
 
     var body: some View {
         NavigationStack {
+            Group {
+                if let result {
+                    ExportResultView(
+                        result: result,
+                        onDone: { dismiss() },
+                        onExportAnother: { self.result = nil },
+                        secondaryAction: .init(title: "Save to Photos", systemImage: "photo.on.rectangle") {
+                            saveToPhotos(result.files)
+                        }
+                    )
+                } else {
+                    formContent
+                }
+            }
+            .navigationTitle(result == nil ? "PDF to Images" : "Done")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if result != nil {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Close") { dismiss() }
+                    }
+                } else {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Cancel") { dismiss() }.disabled(isWorking)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Export") { export() }
+                            .buttonStyle(.glassProminent)
+                            .disabled(selectedDoc == nil || isWorking || (!allPages && rangeText.isEmpty))
+                    }
+                }
+            }
+            .overlay {
+                if isWorking {
+                    VStack(spacing: DesignSystem.Spacing.s) {
+                        ProgressView(value: progress)
+                            .frame(width: 160)
+                        Text(progressText).font(.subheadline)
+                    }
+                    .padding(DesignSystem.Spacing.xl)
+                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                }
+            }
+            .alert("Saved to Photos", isPresented: Binding(
+                get: { photosMessage != nil }, set: { if !$0 { photosMessage = nil } }
+            )) {
+                Button("OK") { photosMessage = nil }
+            } message: {
+                Text(photosMessage ?? "")
+            }
+            .alert("Couldn't export", isPresented: Binding(
+                get: { error != nil }, set: { if !$0 { error = nil } }
+            )) {
+                Button("OK") { error = nil }
+            } message: {
+                Text(error ?? "")
+            }
+            .onDisappear {
+                if let outputDirectory { try? FileManager.default.removeItem(at: outputDirectory) }
+            }
+        }
+    }
+
+    private var formContent: some View {
             Form {
                 SourceDocumentSection(selected: $selectedDoc)
 
@@ -73,57 +141,12 @@ struct PDFToImagesView: View {
                     }
                     .pickerStyle(.segmented)
                     Text(destination == .photos
-                         ? "Images are added to your photo library in page order."
-                         : "Choose Save to Files, AirDrop, or any app from the share sheet.")
+                         ? "Images are added to your photo library in page order. You can still share or save them to Files afterwards."
+                         : "Preview the images, then choose Share, Save to Files or Save to Photos.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("PDF to Images")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { dismiss() }.disabled(isWorking)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Export") { export() }
-                        .buttonStyle(.glassProminent)
-                        .disabled(selectedDoc == nil || isWorking || (!allPages && rangeText.isEmpty))
-                }
-            }
-            .overlay {
-                if isWorking {
-                    VStack(spacing: DesignSystem.Spacing.s) {
-                        ProgressView(value: progress)
-                            .frame(width: 160)
-                        Text(progressText).font(.subheadline)
-                    }
-                    .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
-                }
-            }
-            .sheet(isPresented: Binding(get: { shareItems != nil }, set: { if !$0 { shareItems = nil } })) {
-                if let shareItems {
-                    ActivityShareSheet(items: shareItems)
-                        .presentationDetents([.medium, .large])
-                }
-            }
-            .alert("Saved to Photos", isPresented: Binding(
-                get: { doneMessage != nil }, set: { if !$0 { doneMessage = nil } }
-            )) {
-                Button("Done") { dismiss() }
-                Button("Export More", role: .cancel) { doneMessage = nil }
-            } message: {
-                Text(doneMessage ?? "")
-            }
-            .alert("Couldn't export", isPresented: Binding(
-                get: { error != nil }, set: { if !$0 { error = nil } }
-            )) {
-                Button("OK") { error = nil }
-            } message: {
-                Text(error ?? "")
-            }
-        }
     }
 
     private var rangeSummary: String {
@@ -197,29 +220,59 @@ struct PDFToImagesView: View {
             progress = 1
 
             guard !written.isEmpty else {
+                try? FileManager.default.removeItem(at: dir)
                 error = "No pages could be rendered."
                 return
             }
-            EntitlementStore.shared.recordUse(.tool)
+            if let old = outputDirectory { try? FileManager.default.removeItem(at: old) }
+            outputDirectory = dir
 
-            switch dest {
-            case .share:
-                Haptics.success()
-                shareItems = written
-            case .photos:
+            let count = written.count
+            let noun = count == 1 ? "image" : "images"
+            var summary = "\(count) \(fmt.title) \(noun) from \u{201C}\(doc.title)\u{201D} at \(Int(dpi)) DPI"
+            if written.count < total {
+                summary += " (\(total - written.count) \(total - written.count == 1 ? "page" : "pages") couldn't be rendered)"
+            }
+
+            if dest == .photos {
                 progressText = "Saving to Photos…"
                 do {
-                    try await PHPhotoLibrary.shared().performChanges {
-                        for file in written {
-                            _ = PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: file)
-                        }
-                    }
-                    Haptics.success()
-                    doneMessage = "\(written.count) \(written.count == 1 ? "image" : "images") added to your photo library."
+                    try await addToPhotos(written)
+                    summary = "Added to your photo library · " + summary
                 } catch {
-                    self.error = "Photos didn't accept the images: \(error.localizedDescription)"
+                    // Still show the result so the user can share or save
+                    // the images another way instead of losing them.
+                    summary += ". Photos didn't accept them: \(error.localizedDescription)"
                 }
-                try? FileManager.default.removeItem(at: dir)
+            }
+
+            // The result view records the free-tier use on appear.
+            result = ExportResult(title: "Images Ready", summary: summary, files: written)
+        }
+    }
+
+    /// "Save to Photos" from the result screen (Share destination).
+    private func saveToPhotos(_ files: [URL]) {
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                error = "Allow PDF Editor to add photos in Settings, or use Share / Save to Files instead."
+                return
+            }
+            do {
+                try await addToPhotos(files)
+                Haptics.success()
+                photosMessage = "\(files.count) \(files.count == 1 ? "image" : "images") added to your photo library."
+            } catch {
+                self.error = "Photos didn't accept the images: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func addToPhotos(_ files: [URL]) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
+            for file in files {
+                _ = PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: file)
             }
         }
     }

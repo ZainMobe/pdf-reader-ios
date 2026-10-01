@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Sheet that streams an AI-generated summary of a `Document`.
 struct SummarySheet: View {
@@ -23,6 +24,25 @@ struct SummarySheet: View {
                     }
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    // Once the summary is final, let the user take it with them.
+                    if case .done(let text) = summarizer.state, !text.isEmpty {
+                        Menu {
+                            Button {
+                                UIPasteboard.general.string = text
+                                Haptics.success()
+                            } label: {
+                                Label("Copy Summary", systemImage: "doc.on.doc")
+                            }
+                            ShareLink(item: text, subject: Text("Summary of \(document.title)")) {
+                                Label("Share…", systemImage: "square.and.arrow.up")
+                            }
+                        } label: {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .accessibilityLabel("Copy or share summary")
+                    }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
