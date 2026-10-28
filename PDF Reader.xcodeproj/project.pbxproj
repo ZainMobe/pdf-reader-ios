@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6D403578434ADCB9DAE21B32 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = 4FF5D50D8D4D8B161371E384 /* FirebaseCrashlytics */; };
 		BF505F02306D48B40016AA74 /* ShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = BF505EF8306D48B40016AA74 /* ShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		BF506385306E12480016AA74 /* RevenueCat in Frameworks */ = {isa = PBXBuildFile; productRef = BF506384306E12480016AA74 /* RevenueCat */; };
 		BFA9AFB62FBD93B900EF62F7 /* SwiftyDropbox in Frameworks */ = {isa = PBXBuildFile; productRef = BFA9AFB52FBD93B900EF62F7 /* SwiftyDropbox */; };
@@ -96,6 +97,7 @@
 				BFA9AFB62FBD93B900EF62F7 /* SwiftyDropbox in Frameworks */,
 				FB1A00042F00000100A1B2C3 /* FirebaseCore in Frameworks */,
 				FB1A00052F00000100A1B2C3 /* FirebaseAnalytics in Frameworks */,
+				6D403578434ADCB9DAE21B32 /* FirebaseCrashlytics in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -153,6 +155,7 @@
 				BFA9AAB02FBC091400EF62F7 /* Frameworks */,
 				BFA9AAB12FBC091400EF62F7 /* Resources */,
 				BF505F03306D48B40016AA74 /* Embed Foundation Extensions */,
+				292F93E7FA6AB5416920EF4F /* ShellScript */,
 			);
 			buildRules = (
 			);
@@ -168,6 +171,7 @@
 				BF506384306E12480016AA74 /* RevenueCat */,
 				FB1A00022F00000100A1B2C3 /* FirebaseCore */,
 				FB1A00032F00000100A1B2C3 /* FirebaseAnalytics */,
+				4FF5D50D8D4D8B161371E384 /* FirebaseCrashlytics */,
 			);
 			productName = "PDF Reader";
 			productReference = BFA9AAB32FBC091400EF62F7 /* PDF Reader.app */;
@@ -238,6 +242,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		292F93E7FA6AB5416920EF4F /* ShellScript */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}.debug.dylib",
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		BF505EF4306D48B40016AA74 /* Sources */ = {
@@ -363,7 +389,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 5P7HEMT4DQ;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -600,6 +626,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		4FF5D50D8D4D8B161371E384 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = FB1A00012F00000100A1B2C3 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
+		};
 		BF506384306E12480016AA74 /* RevenueCat */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = BF506383306E12480016AA74 /* XCRemoteSwiftPackageReference "purchases-ios-spm" */;

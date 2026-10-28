@@ -53,6 +53,11 @@ final class DropboxBackup {
                 try await DropboxService.upload(localURL: doc.fileURL, to: remotePath)
                 uploaded += 1
             } catch {
+                AppAnalytics.log(.cloudSyncFailed, [
+                    .service: "dropbox",
+                    .action: "backup_upload",
+                    .errorType: AppAnalytics.errorLabel(error),
+                ])
                 lastError = error.localizedDescription
             }
             progress = Double(index + 1) / total

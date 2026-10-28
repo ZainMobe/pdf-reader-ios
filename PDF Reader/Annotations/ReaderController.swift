@@ -574,6 +574,11 @@ final class ReaderController {
         }
 
         guard didWrite, coordinationError == nil else {
+            AppAnalytics.log(.saveFailed, [
+                .source: AnalyticsSource.reader.rawValue,
+                .errorType: coordinationError.map { AppAnalytics.errorLabel($0) } ?? "write_failed",
+                .encrypted: !writeOptions.isEmpty,
+            ])
             // Keep the edits marked dirty so the next flush retries, and let
             // the host surface the problem.
             saveError = coordinationError?.localizedDescription

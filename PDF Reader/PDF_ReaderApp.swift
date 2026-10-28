@@ -76,8 +76,11 @@ struct PDFAIApp: App {
                         // Share Extension batches land while we're in the
                         // background; pick them up as soon as we're visible.
                         if phase == .active {
+                            AppAnalytics.sessionBegan()
                             IncomingFileRouter.shared.sweepSharedInbox()
                             AnalyticsUserProperties.refreshEnvironment()
+                        } else if phase == .background {
+                            AppAnalytics.sessionEnded()
                         }
                     }
             } else {

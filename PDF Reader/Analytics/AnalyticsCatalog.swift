@@ -5,6 +5,7 @@ enum AnalyticsEvent: String {
     case appEntry = "app_entry"
     case tabSelected = "tab_selected"
     case screenTime = "screen_time"
+    case sessionEnded = "session_ended"
 
     case onboardingStarted = "onboarding_started"
     case onboardingPageViewed = "onboarding_page_viewed"
@@ -30,6 +31,7 @@ enum AnalyticsEvent: String {
     case signatureCreated = "signature_created"
     case signaturePlaced = "signature_placed"
     case pagesEdited = "pages_edited"
+    case saveFailed = "save_failed"
 
     case toolOpened = "tool_opened"
     case toolCompleted = "tool_completed"
@@ -49,6 +51,7 @@ enum AnalyticsEvent: String {
 
     case paywallViewed = "paywall_viewed"
     case paywallClosed = "paywall_closed"
+    case paywallLoadFailed = "paywall_load_failed"
     case paywallPlanSelected = "paywall_plan_selected"
     case purchaseStarted = "purchase_started"
     case purchaseCompleted = "purchase_completed"
@@ -60,11 +63,22 @@ enum AnalyticsEvent: String {
     case upgradeBannerTapped = "upgrade_banner_tapped"
     case upgradeBannerDismissed = "upgrade_banner_dismissed"
 
+    case subscriptionCancelled = "subscription_cancelled"
+    case subscriptionReactivated = "subscription_reactivated"
+    case subscriptionExpired = "subscription_expired"
+    case subscriptionBillingIssue = "subscription_billing_issue"
+    case trialConverted = "trial_converted"
+
     case settingChanged = "setting_changed"
     case reviewPromptRequested = "review_prompt_requested"
     case cloudServiceConnected = "cloud_service_connected"
     case cloudServiceDisconnected = "cloud_service_disconnected"
+    case cloudSyncFailed = "cloud_sync_failed"
     case inviteShared = "invite_shared"
+
+    var isFailure: Bool {
+        rawValue.hasSuffix("_failed") || self == .subscriptionBillingIssue
+    }
 }
 
 enum AnalyticsParam: String {
@@ -75,6 +89,8 @@ enum AnalyticsParam: String {
     case tool
     case tab
     case screenName = "screen_name"
+    case lastScreen = "last_screen"
+    case screensViewed = "screens_viewed"
     case seconds
     case pageBucket = "page_bucket"
     case pagesViewed = "pages_viewed"
@@ -100,6 +116,7 @@ enum AnalyticsParam: String {
     case revenue = "value"
     case currency
     case plan
+    case periodType = "period_type"
     case hasTrial = "has_trial"
     case trigger
     case proFeature = "pro_feature"
@@ -138,6 +155,7 @@ enum AnalyticsUserProperty: String {
     case iCloudEnabled = "icloud_enabled"
     case dropboxLinked = "dropbox_linked"
     case onboardingDone = "onboarding_done"
+    case subscriptionState = "subscription_state"
 }
 
 enum AnalyticsSource: String {

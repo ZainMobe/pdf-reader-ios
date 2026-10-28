@@ -4,6 +4,8 @@ The iOS app logs product analytics to Firebase (GA4) so we can see which screens
 
 All logging goes through `PDF Reader/Analytics/`. Nothing else in the app imports Firebase.
 
+The Android app (`PDFReaderAndroid`) logs the same events, parameters and user properties with identical names from `app/src/main/java/com/wapp/pdfreader/analytics/`, so every report below covers both platforms. Split by platform with the built-in `platform` dimension.
+
 | File | What it does |
 | --- | --- |
 | `AppAnalytics.swift` | Configures Firebase, logs events, buckets numbers, tracks AI runs (`AIAnalyticsRun`) |
@@ -12,6 +14,9 @@ All logging goes through `PDF Reader/Analytics/`. Nothing else in the app import
 | `AnalyticsUserProperties.swift` | User properties (Pro, plan, library size, AI availability, theme) |
 | `ReadingSessionTracker.swift` | Time and pages read per Reader session |
 | `ScanAnalytics.swift` | Scan success and failure |
+| `SubscriptionAnalytics.swift` | Detects cancellations, expiries, billing issues and trial conversions from RevenueCat |
+
+Every analytics event is also written to the Crashlytics log, so a crash report shows the last things the user did. Every `*_failed` event (and `subscription_billing_issue`) is also recorded as a Crashlytics non-fatal, grouped by event and `error_type`; expected noise (cancellations, offline) is skipped. Crashlytics custom keys carry `last_screen` and every user property.
 
 ## Setup (one time)
 
@@ -44,6 +49,15 @@ Other useful explorations:
 - **Reading depth**: `reading_session` with `seconds`, `pages_viewed`, `percent_read`, `theme`.
 - **Onboarding**: `onboarding_page_viewed` by `page_name`, and `onboarding_completed` with `skipped`.
 - **Entry points**: `app_entry` by `source` (widget, quick_action, shortcut, deep_link) and `action`.
+
+## The report that answers "why are people leaving"
+
+- **Where sessions end**: `session_ended` with rows = `last_screen`, values = Event count. A screen that ends far more sessions than it gets views is where people give up. Add `is_pro` to compare free vs paid.
+- **Paywall dismissals**: `paywall_closed` with `purchased` = 0, broken down by `source`, `trigger` and `plan` (the plan selected when they left). `seconds` shows whether they read it or bounced. `paywall_load_failed` shows when no prices could be shown at all.
+- **Purchase errors**: `purchase_failed` by `error_type` (`billing.*` on Android, `RevenueCat.ErrorCode.*` on iOS, `entitlement_inactive` when the store charged but Pro didn't unlock). `purchase_cancelled` is the user backing out of the store sheet.
+- **Subscription churn**: `subscription_cancelled` (auto-renew turned off), `subscription_expired` (`kind` = not_renewed or billing_issue), `subscription_billing_issue`, `subscription_reactivated`, `trial_converted`. Detected when the app next talks to RevenueCat, so they appear on the user's next launch. The `subscription_state` user property (never, trial, trial_cancelled, active, cancelled, billing_issue, lifetime, lapsed) splits any report by where users are in that lifecycle.
+- **Failures**: every `*_failed` event by `error_type` — `tool_failed`, `ai_failed`, `import_failed`, `document_open_failed`, `scan_failed`, `save_failed` (autosave couldn't write), `cloud_sync_failed`. The same failures appear in Crashlytics as non-fatals with full context.
+- **Retention**: Firebase Analytics > Retention, and Audiences built on `subscription_state` or on users with `ai_failed` / `save_failed`.
 
 ## Events
 
@@ -82,18 +96,26 @@ Other useful explorations:
 | `setting_changed` | Any setting | `setting`, `new_value` |
 | `cloud_service_connected` / `cloud_service_disconnected` | Dropbox | `service`, `success` |
 | `invite_shared` / `review_prompt_requested` | Growth | `source` |
+| `session_ended` | App goes to the background | `seconds`, `last_screen`, `screens_viewed`, `is_pro` |
+| `paywall_load_failed` | Paywall couldn't load prices | `source`, `error_type` |
+| `subscription_cancelled` / `subscription_reactivated` | Auto-renew turned off / back on | `plan`, `period_type` |
+| `subscription_expired` | Pro ended | `plan`, `period_type`, `kind` |
+| `subscription_billing_issue` | Store reports a billing problem | `plan`, `period_type` |
+| `trial_converted` | Trial became a paid period | `plan` |
+| `save_failed` | Reader autosave couldn't write the PDF | `source`, `error_type`, `encrypted` |
+| `cloud_sync_failed` | Dropbox / Google Drive operation failed | `service`, `action`, `error_type` |
 
 ## User properties
 
-`is_pro`, `plan` (free, monthly, annual, lifetime), `library_size` (bucket), `ai_availability` (on_device, cloud, needs_consent, unavailable), `ai_mode`, `reader_theme`, `library_view_mode`, `has_signature`, `icloud_enabled`, `dropbox_linked`, `onboarding_done`.
+`is_pro`, `plan` (free, monthly, annual, lifetime), `subscription_state`, `library_size` (bucket), `ai_availability` (on_device, cloud, needs_consent, unavailable), `ai_mode`, `reader_theme`, `library_view_mode`, `has_signature`, `icloud_enabled`, `dropbox_linked` (iOS), `drive_linked` (Android), `onboarding_done`.
 
 Register each as a user-scoped custom dimension so every report can be split by free vs Pro, on-device vs cloud AI, and so on.
 
 ## Custom definitions to register
 
-Event-scoped dimensions: `feature`, `category`, `source`, `action`, `tool`, `tab`, `screen_name`, `page_bucket`, `size_bucket`, `kind`, `error_type`, `annotation_type`, `ai_action`, `ai_backend`, `output_size`, `option`, `format`, `destination`, `plan`, `trigger`, `pro_feature`, `page_name`, `theme`, `display_mode`, `setting`, `new_value`, `language`, `filter`, `query_length`, `service`.
+Event-scoped dimensions: `feature`, `category`, `source`, `action`, `tool`, `tab`, `screen_name`, `page_bucket`, `size_bucket`, `kind`, `error_type`, `annotation_type`, `ai_action`, `ai_backend`, `output_size`, `option`, `format`, `destination`, `plan`, `trigger`, `pro_feature`, `page_name`, `theme`, `display_mode`, `setting`, `new_value`, `language`, `filter`, `query_length`, `service`, `last_screen`, `period_type`.
 
-Metrics: `seconds`, `duration_ms`, `pages_viewed`, `percent_read`, `count`, `file_count`, `failed_count`, `message_index`, `remaining`, `marks`, `pages`, `saved_percent`, `pages_seen`.
+Metrics: `seconds`, `duration_ms`, `pages_viewed`, `percent_read`, `count`, `file_count`, `failed_count`, `message_index`, `remaining`, `marks`, `pages`, `saved_percent`, `pages_seen`, `screens_viewed`.
 
 GA4 allows 50 event-scoped dimensions and 50 metrics per property, so this fits with room to spare.
 

@@ -151,6 +151,11 @@ struct DropboxBrowserView: View {
         do {
             entries = try await DropboxService.listFolder(at: path)
         } catch {
+            AppAnalytics.log(.cloudSyncFailed, [
+                .service: "dropbox",
+                .action: "list_folder",
+                .errorType: AppAnalytics.errorLabel(error),
+            ])
             self.error = error.localizedDescription
         }
     }

@@ -94,6 +94,7 @@ final class EntitlementStore {
         isPro = proEntitlement?.isActive == true
         activeProductID = proEntitlement?.productIdentifier
         UserDefaults.standard.set(isPro, forKey: Self.cachedProKey)
+        SubscriptionAnalytics.observe(customerInfo)
         AnalyticsUserProperties.refreshEntitlement()
     }
 }

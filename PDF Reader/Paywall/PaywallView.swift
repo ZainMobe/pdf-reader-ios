@@ -11,6 +11,7 @@ struct PaywallView: View {
     @State private var trigger = FreeTier.lastBlocked?.rawValue
     @State private var openedAt = Date()
     @State private var didPurchase = false
+    @State private var lastFailure: String?
     @State private var selectedTier: SubscriptionTier = .yearly
     @State private var packages: [Package] = []
     @State private var eligibility: [String: IntroEligibilityStatus] = [:]
@@ -61,6 +62,8 @@ struct PaywallView: View {
                     .trigger: trigger ?? "none",
                     .seconds: AppAnalytics.seconds(since: openedAt),
                     .purchased: didPurchase,
+                    .plan: planName(selectedTier),
+                    .errorType: lastFailure,
                 ])
             }
             .onChange(of: selectedTier) { _, tier in
@@ -331,6 +334,7 @@ struct PaywallView: View {
         // or placeholder API key). Show the "couldn't load" state instead.
         guard Purchases.isConfigured else {
             loadAttempted = true
+            AppAnalytics.log(.paywallLoadFailed, [.source: source.rawValue, .errorType: "not_configured"])
             return
         }
         do {
@@ -343,6 +347,9 @@ struct PaywallView: View {
                 return lhsIndex < rhsIndex
             }
             packages = sorted
+            if sorted.isEmpty {
+                AppAnalytics.log(.paywallLoadFailed, [.source: source.rawValue, .errorType: "no_packages"])
+            }
 
             // Subscriptions only — lifetime can't have an intro offer.
             let subscriptionIDs = sorted
@@ -354,8 +361,7 @@ struct PaywallView: View {
                 eligibility = result.mapValues(\.status)
             }
         } catch {
-            // The inline "Couldn't load subscriptions… Retry" text covers
-            // this; a "Purchase failed" alert before any tap would be wrong.
+            AppAnalytics.log(.paywallLoadFailed, [.source: source.rawValue, .errorType: AppAnalytics.errorLabel(error)])
         }
         loadAttempted = true
     }
@@ -391,6 +397,7 @@ struct PaywallView: View {
                 Haptics.success()
                 showingCelebration = true
             } else {
+                lastFailure = "entitlement_inactive"
                 AppAnalytics.log(.purchaseFailed, purchaseParams.merging([.errorType: "entitlement_inactive"]) { $1 })
                 // Charged but the entitlement isn't active: almost always a
                 // product-to-entitlement mapping problem in the dashboard.
@@ -399,7 +406,8 @@ struct PaywallView: View {
                 purchaseError = "Your purchase went through, but Pro isn't active yet. Try Restore Purchases in a moment, or contact support if it persists."
             }
         } catch {
-            AppAnalytics.log(.purchaseFailed, purchaseParams.merging([.errorType: AppAnalytics.errorLabel(error)]) { $1 })
+            lastFailure = AppAnalytics.errorLabel(error)
+            AppAnalytics.log(.purchaseFailed, purchaseParams.merging([.errorType: lastFailure]) { $1 })
             Haptics.error()
             purchaseError = error.localizedDescription
         }

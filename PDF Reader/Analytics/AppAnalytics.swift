@@ -1,10 +1,14 @@
 import Foundation
 import FirebaseCore
 import FirebaseAnalytics
+import FirebaseCrashlytics
 
 enum AppAnalytics {
     private static let enabledKey = "settings.analyticsEnabled"
     private(set) static var isConfigured = false
+    private(set) static var lastScreen: AnalyticsScreen?
+    private static var screensViewed = 0
+    private static var sessionStartedAt: Date?
 
     static func configure() {
         guard !isConfigured else { return }
@@ -57,10 +61,40 @@ enum AppAnalytics {
             }
         }
         Analytics.logEvent(event.rawValue, parameters: clean.isEmpty ? nil : clean)
-        #if DEBUG
         let summary = clean.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " ")
+        Crashlytics.crashlytics().log("\(event.rawValue) \(summary)")
+        if event.isFailure { recordFailure(event, errorType: clean[AnalyticsParam.errorType.rawValue] as? String, params: clean) }
+        #if DEBUG
         print("[Analytics] \(event.rawValue) \(summary)")
         #endif
+    }
+
+    private static func recordFailure(_ event: AnalyticsEvent, errorType: String?, params: [String: Any]) {
+        let type = errorType ?? "unknown"
+        let expected = ["cancel", "offline", "url.-1009", "url.-1001", "url.-1005", "ai.blocked", "ai.not_configured", "ai.consent_required"]
+        guard !expected.contains(where: { type.contains($0) }) else { return }
+        var userInfo: [String: Any] = params
+        userInfo[NSLocalizedDescriptionKey] = "\(event.rawValue): \(type)"
+        Crashlytics.crashlytics().record(error: NSError(domain: "\(event.rawValue).\(type)", code: 0, userInfo: userInfo))
+    }
+
+    @MainActor static func sessionBegan() {
+        guard sessionStartedAt == nil else { return }
+        sessionStartedAt = Date()
+        screensViewed = 0
+    }
+
+    @MainActor static func sessionEnded() {
+        guard let start = sessionStartedAt else { return }
+        sessionStartedAt = nil
+        let seconds = self.seconds(since: start)
+        guard seconds >= 1 else { return }
+        log(.sessionEnded, [
+            .seconds: min(seconds, 6 * 3600),
+            .lastScreen: lastScreen?.rawValue ?? "none",
+            .screensViewed: screensViewed,
+            .isPro: EntitlementStore.shared.isPro,
+        ])
     }
 
     static func feature(_ feature: AnalyticsFeature, source: String? = nil, _ extra: [AnalyticsParam: Any?] = [:]) {
@@ -72,7 +106,11 @@ enum AppAnalytics {
     }
 
     static func screen(_ screen: AnalyticsScreen) {
+        lastScreen = screen
+        screensViewed += 1
         guard isConfigured else { return }
+        Crashlytics.crashlytics().setCustomValue(screen.rawValue, forKey: "last_screen")
+        Crashlytics.crashlytics().log("screen_view \(screen.rawValue)")
         Analytics.logEvent(AnalyticsEventScreenView, parameters: [
             AnalyticsParameterScreenName: screen.rawValue,
             AnalyticsParameterScreenClass: screen.screenClass,
@@ -85,6 +123,7 @@ enum AppAnalytics {
     static func setUserProperty(_ property: AnalyticsUserProperty, _ value: String?) {
         guard isConfigured else { return }
         Analytics.setUserProperty(value.map { String($0.prefix(36)) }, forName: property.rawValue)
+        Crashlytics.crashlytics().setCustomValue(value ?? "", forKey: property.rawValue)
     }
 
     static func pageBucket(_ count: Int?) -> String? {
