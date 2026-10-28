@@ -52,7 +52,7 @@ struct ToolSuccessView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, DesignSystem.Spacing.m)
                 }
-                .buttonStyle(.glassProminent)
+                .compatGlassButtonStyle(prominent: true)
                 .opacity(contentOpacity)
                 .padding(.horizontal, DesignSystem.Spacing.l)
                 .padding(.bottom, DesignSystem.Spacing.xl)
@@ -73,6 +73,7 @@ struct ToolSuccessView: View {
                 contentOpacity = 1.0
             }
         }
+        .trackScreen(.toolSuccess)
     }
 
     // MARK: - Pieces
@@ -124,12 +125,13 @@ struct ToolSuccessView: View {
                     .padding(.horizontal, DesignSystem.Spacing.s)
                     .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glass)
+            .compatGlassButtonStyle()
             .accessibilityLabel("Share \(doc.title)")
 
             Button {
                 Haptics.impact(.light)
                 let id = doc.id
+                AppAnalytics.log(.exportShared, [.destination: "open_result"])
                 onDone()
                 // Route through the Library so this works on iPhone too
                 // (openWindow needs multi-scene support, iPad/Mac only).
@@ -137,6 +139,7 @@ struct ToolSuccessView: View {
                     if supportsMultipleScenes {
                         openWindow(value: id)
                     } else {
+                        IncomingFileRouter.shared.pendingOpenSource = .toolsTab
                         IncomingFileRouter.shared.documentToOpen = id
                         IncomingFileRouter.shared.libraryRequestToken &+= 1
                     }
@@ -147,7 +150,7 @@ struct ToolSuccessView: View {
                     .padding(.horizontal, DesignSystem.Spacing.m)
                     .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glass)
+            .compatGlassButtonStyle()
         }
         .padding(DesignSystem.Spacing.m)
         .background(

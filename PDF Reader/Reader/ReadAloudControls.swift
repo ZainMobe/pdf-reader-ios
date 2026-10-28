@@ -46,6 +46,7 @@ struct ReadAloudControls: View {
                     ForEach([0.75, 1.0, 1.25, 1.5, 1.75, 2.0], id: \.self) { value in
                         Button {
                             aloud.speed = value
+                            AppAnalytics.log(.readerAction, [.action: "read_aloud_speed", .option: String(value)])
                         } label: {
                             if abs(aloud.speed - value) < 0.01 {
                                 Label(speedLabel(value), systemImage: "checkmark")
@@ -58,6 +59,7 @@ struct ReadAloudControls: View {
                 Section("Voice") {
                     Button {
                         aloud.voiceIdentifier = nil
+                        AppAnalytics.log(.readerAction, [.action: "read_aloud_voice", .option: "automatic"])
                     } label: {
                         if aloud.voiceIdentifier == nil {
                             Label("Automatic", systemImage: "checkmark")
@@ -68,6 +70,7 @@ struct ReadAloudControls: View {
                     ForEach(aloud.availableVoices.prefix(12), id: \.identifier) { voice in
                         Button {
                             aloud.voiceIdentifier = voice.identifier
+                            AppAnalytics.log(.readerAction, [.action: "read_aloud_voice", .option: voice.language])
                         } label: {
                             if aloud.voiceIdentifier == voice.identifier {
                                 Label(voiceLabel(voice), systemImage: "checkmark")
@@ -95,7 +98,7 @@ struct ReadAloudControls: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.l)
         .padding(.vertical, DesignSystem.Spacing.m)
-        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.large))
+        .compatGlass(.rect(DesignSystem.Radius.large))
         .padding(.horizontal, DesignSystem.Spacing.l)
         .padding(.bottom, DesignSystem.Spacing.l)
     }

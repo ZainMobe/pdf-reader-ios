@@ -20,7 +20,7 @@ struct SummarySheet: View {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: DesignSystem.Spacing.xs) {
                         Image(systemName: "sparkles")
-                        Text("On-device")
+                        Text(AIEngine.availability().backend?.displayName ?? "On-device")
                     }
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -31,6 +31,7 @@ struct SummarySheet: View {
                         Menu {
                             Button {
                                 UIPasteboard.general.string = text
+                                AppAnalytics.log(.aiResultAction, [.aiAction: AnalyticsAIAction.summarize.rawValue, .action: "copy"])
                                 Haptics.success()
                             } label: {
                                 Label("Copy Summary", systemImage: "doc.on.doc")
@@ -55,6 +56,7 @@ struct SummarySheet: View {
                 summarizer.cancel()
             }
         }
+        .trackScreen(.aiSummary)
     }
 
     @ViewBuilder

@@ -27,6 +27,9 @@ final class PageEditor {
     private let document: PDFDocument
     private(set) var refreshToken = UUID()
     let isEncrypted: Bool
+    private(set) var movedCount = 0
+    private(set) var deletedCount = 0
+    private(set) var rotatedCount = 0
 
     init?(url: URL) {
         guard let pdf = PDFDocument.opened(at: url) else { return nil }
@@ -44,18 +47,21 @@ final class PageEditor {
         document.removePage(at: source)
         let adjustedDestination = destination > source ? destination - 1 : destination
         document.insert(page, at: adjustedDestination)
+        movedCount += 1
         refreshToken = UUID()
     }
 
     func delete(at index: Int) {
         guard index < document.pageCount else { return }
         document.removePage(at: index)
+        deletedCount += 1
         refreshToken = UUID()
     }
 
     func rotate(at index: Int) {
         guard let page = document.page(at: index) else { return }
         page.rotation = (page.rotation + 90) % 360
+        rotatedCount += 1
         refreshToken = UUID()
     }
 

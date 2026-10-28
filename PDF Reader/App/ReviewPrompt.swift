@@ -17,6 +17,7 @@ enum ReviewPrompt {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: didPromptKey) else { return }
         defaults.set(true, forKey: didPromptKey)
+        AppAnalytics.log(.reviewPromptRequested)
 
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 800_000_000)

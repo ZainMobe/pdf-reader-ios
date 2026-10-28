@@ -27,6 +27,7 @@ struct RootView: View {
     @State private var showingAskLibrary = false
     @State private var askLibraryQuery = ""
     @State private var showingPaywall = false
+    @State private var paywallSource: AnalyticsSource = .unknown
     /// Action that arrived while onboarding is covering the screen; replayed
     /// once onboarding finishes so a cold-launch Quick Action isn't dropped.
     @State private var actionAfterOnboarding: IncomingFileRouter.AppAction?
@@ -53,6 +54,7 @@ struct RootView: View {
                     },
                     onNewBlank: {
                         Haptics.impact(.light)
+                        AppAnalytics.toolOpened(.newBlank, source: .addTab)
                         showingNewBlank = true
                     }
                 )
@@ -65,6 +67,9 @@ struct RootView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .onChange(of: selection) { _, tab in
+            AppAnalytics.log(.tabSelected, [.tab: tab.analyticsName])
+        }
         .fileImporter(
             isPresented: $showingImporter,
             allowedContentTypes: [.pdf, .image],
@@ -91,7 +96,7 @@ struct RootView: View {
             LibrarySearchView(initialQuery: askLibraryQuery)
         }
         .sheet(isPresented: $showingPaywall) {
-            PaywallView()
+            PaywallView(source: paywallSource)
         }
         .overlay(alignment: .top) {
             if let banner = incomingRouter.banner {
@@ -116,7 +121,7 @@ struct RootView: View {
                 }
                 .padding(.horizontal, DesignSystem.Spacing.l)
                 .padding(.vertical, DesignSystem.Spacing.m)
-                .glassEffect(.regular, in: .capsule)
+                .compatGlass(.capsule)
             }
         }
         .alert(
@@ -180,6 +185,7 @@ struct RootView: View {
             if EntitlementStore.shared.unlock(.aiAction) {
                 showingAskLibrary = true
             } else {
+                paywallSource = .deepLink
                 showingPaywall = true
             }
         case .openTools:
@@ -192,8 +198,9 @@ struct RootView: View {
         case .success(let urls):
             // The router validates, converts images, de-duplicates and
             // shows the "Added" banner with an Open action.
-            incomingRouter.handle(urls: urls)
+            incomingRouter.handle(urls: urls, source: .filesPicker)
         case .failure(let error):
+            AppAnalytics.log(.importFailed, [.source: AnalyticsSource.filesPicker.rawValue, .errorType: AppAnalytics.errorLabel(error)])
             importError = error.localizedDescription
         }
     }
@@ -204,17 +211,21 @@ struct RootView: View {
             Task {
                 isProcessingScan = true
                 defer { isProcessingScan = false }
+                let started = Date()
                 do {
                     try await ScanToPDF.createDocument(from: images, in: modelContext)
+                    ScanAnalytics.completed(pages: images.count, source: .addTab, startedAt: started, context: modelContext)
                     Haptics.success()
                     ReviewPrompt.requestIfNeeded(using: requestReview)
                 } catch {
+                    ScanAnalytics.failed(error, source: .addTab)
                     importError = error.localizedDescription
                 }
             }
         case .success:
             break
         case .failure(let err):
+            ScanAnalytics.failed(err, source: .addTab)
             importError = err.localizedDescription
         }
     }
@@ -222,6 +233,16 @@ struct RootView: View {
 
 private enum Destination: Hashable {
     case library, ai, add, tools, settings
+
+    var analyticsName: String {
+        switch self {
+        case .library: "library"
+        case .ai: "ai"
+        case .add: "add"
+        case .tools: "tools"
+        case .settings: "settings"
+        }
+    }
 }
 
 /// Top banner shown after files arrive from outside the app. Tap Open to
@@ -261,7 +282,7 @@ private struct IncomingFileBanner: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.l)
         .padding(.vertical, DesignSystem.Spacing.m)
-        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.large))
+        .compatGlass(.rect(DesignSystem.Radius.large))
         .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
         .gesture(
             DragGesture(minimumDistance: 10)
@@ -321,6 +342,7 @@ private struct AddHomeView: View {
             }
             .navigationTitle("Add")
         }
+        .trackScreen(.add)
     }
 
     private func row(_ title: String, systemImage: String, subtitle: String) -> some View {

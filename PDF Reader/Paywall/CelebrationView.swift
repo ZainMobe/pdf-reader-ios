@@ -30,6 +30,7 @@ struct CelebrationView: View {
                 sealVisible = true
             }
         }
+        .trackScreen(.celebration)
     }
 
     private var backdrop: some View {
@@ -105,7 +106,7 @@ struct CelebrationView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
             .padding(.horizontal, DesignSystem.Spacing.xl)
             .padding(.bottom, DesignSystem.Spacing.xxl)
             .opacity(sealVisible ? 1.0 : 0)

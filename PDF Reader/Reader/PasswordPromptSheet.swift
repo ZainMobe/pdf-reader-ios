@@ -35,11 +35,12 @@ struct PasswordPromptSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Unlock") { submit() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                         .disabled(password.isEmpty)
                 }
             }
         }
+        .trackScreen(.passwordPrompt)
     }
 
     private func submit() {

@@ -56,7 +56,7 @@ struct PDFToWordView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Export") { export() }
-                            .buttonStyle(.glassProminent)
+                            .compatGlassButtonStyle(prominent: true)
                             .disabled(selectedDoc == nil || isWorking)
                     }
                 }
@@ -69,7 +69,7 @@ struct PDFToWordView: View {
                             .font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert("Couldn't export", isPresented: Binding(
@@ -85,6 +85,7 @@ struct PDFToWordView: View {
                 if let outputDirectory { try? FileManager.default.removeItem(at: outputDirectory) }
             }
         }
+        .trackScreen(.toolPDFToWord)
     }
 
     private var formContent: some View {
@@ -132,6 +133,7 @@ struct PDFToWordView: View {
         let pageCount = doc.pageCount
         let resultTitle = format.resultTitle
         isWorking = true
+        let started = Date()
 
         Task {
             defer { isWorking = false }
@@ -162,6 +164,7 @@ struct PDFToWordView: View {
                     fromByteCount: (try? FileManager.default.attributesOfItem(atPath: output.file.path)[.size] as? Int64) ?? 0,
                     countStyle: .file
                 )
+                AppAnalytics.toolCompleted(.pdfToWord, startedAt: started, pageCount: pageCount, [.format: ext, .option: embed ? "embed_scans" : "text_only"])
                 result = ExportResult(
                     title: resultTitle,
                     summary: "\(pageCount) \(pageCount == 1 ? "page" : "pages") from \u{201C}\(doc.title)\u{201D} · \(size)",
@@ -169,6 +172,7 @@ struct PDFToWordView: View {
                     textExcerpt: isWord ? nil : output.excerpt
                 )
             } catch {
+                AppAnalytics.toolFailed(.pdfToWord, error: error)
                 self.error = error.localizedDescription
             }
         }

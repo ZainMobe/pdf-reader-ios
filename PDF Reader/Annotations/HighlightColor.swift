@@ -44,4 +44,6 @@ enum AppSettings {
     static let defaultDisplayMode = "settings.defaultDisplayMode"
     static let defaultDisplayDirection = "settings.defaultDisplayDirection"
     static let highlightColor = "settings.highlightColor"
+    static let aiProcessingMode = "settings.aiProcessingMode"
+    static let cloudAIConsent = "settings.cloudAIConsent"
 }

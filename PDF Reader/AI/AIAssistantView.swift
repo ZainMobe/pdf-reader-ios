@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import FoundationModels
 
 /// AI — On-device Foundation Models hub.
 ///
@@ -12,8 +11,10 @@ import FoundationModels
 /// the paywall. When Apple Intelligence is unavailable on the device, falls
 /// back to a `ContentUnavailableView` describing why.
 struct AIAssistantView: View {
-    private let model = SystemLanguageModel.default
     private let entitlements = EntitlementStore.shared
+
+    @AppStorage(AppSettings.cloudAIConsent) private var cloudConsent = false
+    @AppStorage(AppSettings.aiProcessingMode) private var processingModeRaw = AIProcessingMode.automatic.rawValue
 
     @Query(sort: \Document.addedAt, order: .reverse) private var documents: [Document]
 
@@ -36,7 +37,7 @@ struct AIAssistantView: View {
                 .navigationTitle("AI")
                 .navigationBarTitleDisplayMode(.large)
                 .sheet(isPresented: $showingPaywall) {
-                    PaywallView()
+                    PaywallView(source: .aiTab)
                 }
                 .fullScreenCover(isPresented: $showingAskLibrary) {
                     LibrarySearchView()
@@ -64,6 +65,7 @@ struct AIAssistantView: View {
                     aiSheet(for: launch)
                 }
         }
+        .trackScreen(.aiAssistant)
     }
 
     /// Documents sorted by most-recently-opened (falling back to addedAt for
@@ -76,25 +78,27 @@ struct AIAssistantView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch model.availability {
-        case .available:
+        switch AIEngine.availability() {
+        case .ready:
             hub
-        case .unavailable(.deviceNotEligible):
+        case .needsCloudConsent:
+            CloudAIConsentView(onAllow: {})
+        case .onDeviceUnavailable(.deviceNotEligible), .onDeviceUnavailable(.osTooOld), .unavailable:
             unavailable(
-                "Apple Intelligence isn't supported on this device.",
+                "AI features need Apple Intelligence, which isn't supported on this device.",
                 systemImage: "sparkles.slash"
             )
-        case .unavailable(.appleIntelligenceNotEnabled):
+        case .onDeviceUnavailable(.appleIntelligenceNotEnabled):
             unavailable(
                 "Turn on Apple Intelligence in Settings to use AI features.",
                 systemImage: "sparkles.slash"
             )
-        case .unavailable(.modelNotReady):
+        case .onDeviceUnavailable(.modelNotReady):
             unavailable(
                 "The on-device model is downloading. Try again in a few minutes.",
                 systemImage: "arrow.down.circle"
             )
-        case .unavailable:
+        case .onDeviceUnavailable:
             unavailable(
                 "AI features are currently unavailable.",
                 systemImage: "sparkles.slash"
@@ -151,9 +155,9 @@ struct AIAssistantView: View {
                     .symbolEffect(.pulse, options: .repeat(.continuous))
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("On-device, private")
+                Text(AIEngine.availability().backend == .cloud ? "Cloud AI" : "On-device, private")
                     .font(.title3.weight(.semibold))
-                Text("Powered by Apple Intelligence. Nothing leaves your iPhone.")
+                Text(AIEngine.statusLine)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -165,6 +169,7 @@ struct AIAssistantView: View {
     /// Entry point for cross-document search and answers.
     private var askLibraryCard: some View {
         Button {
+            AppAnalytics.log(.aiActionTapped, [.aiAction: AnalyticsAIAction.askLibrary.rawValue, .source: AnalyticsSource.aiTab.rawValue])
             if entitlements.unlock(.aiAction) {
                 showingAskLibrary = true
             } else {
@@ -256,7 +261,7 @@ struct AIAssistantView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
             Text("7-day free trial · Cancel anytime")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -285,6 +290,7 @@ struct AIAssistantView: View {
     /// `launch(_:)` once a document and an action have both been chosen.
     private func tap(action: AIAction) {
         Haptics.impact(.light)
+        AppAnalytics.log(.aiActionTapped, [.aiAction: action.analyticsAction.rawValue, .source: "ai_tab_action"])
         guard entitlements.canUse(.aiAction) else {
             showingPaywall = true
             return
@@ -311,6 +317,7 @@ struct AIAssistantView: View {
     private func launchFromActionPickerIfNeeded() {
         if let captured = capturedFromActionPicker {
             capturedFromActionPicker = nil
+            AppAnalytics.log(.aiActionTapped, [.aiAction: captured.action.analyticsAction.rawValue, .source: "ai_tab_recent"])
             launch(captured)
         }
     }
@@ -350,6 +357,16 @@ enum AIAction: String, Identifiable, CaseIterable {
     case summarize, chat, translate, extract, autoFill
 
     var id: String { rawValue }
+
+    var analyticsAction: AnalyticsAIAction {
+        switch self {
+        case .summarize: .summarize
+        case .chat: .chat
+        case .translate: .translate
+        case .extract: .extract
+        case .autoFill: .formFill
+        }
+    }
 
     var title: String {
         switch self {
@@ -422,7 +439,7 @@ private struct AIActionCard: View {
         .frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
         .padding(DesignSystem.Spacing.m)
         .contentShape(Rectangle())
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: DesignSystem.Radius.medium))
+        .compatGlass(.rect(DesignSystem.Radius.medium), interactive: true)
     }
 
     private var iconBadge: some View {
@@ -540,6 +557,7 @@ private struct DocumentPickerSheet: View {
                 }
             }
         }
+        .trackScreen(.aiDocumentPicker)
     }
 }
 
@@ -619,6 +637,7 @@ private struct ActionPickerSheet: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .trackScreen(.aiActionPicker)
     }
 
     private var documentHeader: some View {
@@ -643,7 +662,7 @@ private struct ActionPickerSheet: View {
             Spacer(minLength: 0)
         }
         .padding(DesignSystem.Spacing.m)
-        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+        .compatGlass(.rect(DesignSystem.Radius.medium))
     }
 }
 

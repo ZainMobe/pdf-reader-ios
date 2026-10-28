@@ -12,6 +12,7 @@ struct WatermarkView: View {
     /// When set, the picker preselects this document and the user only has
     /// to choose watermark text + opacity. Used when opened from the Reader.
     var preselected: Document?
+    var analyticsSource: AnalyticsSource = .toolsTab
 
     @State private var selectedDoc: Document?
     @State private var watermarkText = "CONFIDENTIAL"
@@ -39,6 +40,7 @@ struct WatermarkView: View {
                 }
             }
         }
+        .trackScreen(.toolWatermark)
     }
 
     private var formContent: some View {
@@ -91,7 +93,7 @@ struct WatermarkView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Apply") { apply() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                         .disabled(!canApply || isWorking)
                 }
             }
@@ -102,7 +104,7 @@ struct WatermarkView: View {
                         Text("Adding watermark…").font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -133,6 +135,7 @@ struct WatermarkView: View {
         let trimmed = watermarkText.trimmingCharacters(in: .whitespacesAndNewlines)
         let alpha = opacity
         isWorking = true
+        let started = Date()
         Task {
             defer { isWorking = false }
             await DocumentStorage.ensureDownloaded(at: doc.fileURL)
@@ -144,12 +147,14 @@ struct WatermarkView: View {
                     in: modelContext
                 )
                 try? modelContext.save()
+                AppAnalytics.toolCompleted(.watermark, startedAt: started, pageCount: stamped.pageCount, [.source: analyticsSource.rawValue])
                 success = ToolSuccessResult(
                     title: "Watermark Added",
                     summary: "Stamped \(stamped.pageCount) \(stamped.pageCount == 1 ? "page" : "pages") with \u{201C}\(trimmed)\u{201D}",
                     documents: [stamped]
                 )
             } catch {
+                AppAnalytics.toolFailed(.watermark, error: error)
                 self.error = error.localizedDescription
             }
         }

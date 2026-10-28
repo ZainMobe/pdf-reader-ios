@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModels
 import PDFKit
 
 /// Multi-turn on-device chat session scoped to a single `Document`.
@@ -28,11 +27,15 @@ final class DocumentChat {
 
     private(set) var messages: [Message] = []
     private(set) var status: Status = .idle
-    private var session: LanguageModelSession
-    private let instructions: Instructions
+    private var session: (any AIChatSession)?
+    private var unavailable: AIError?
     private var task: Task<Void, Never>?
+    private var activeRun: AIAnalyticsRun?
 
-    private static let documentBudget = 6_000
+    private static let onDeviceDocumentBudget = 6_000
+    private static let cloudDocumentBudget = 120_000
+
+    var backend: AIBackend? { session?.backend }
 
     /// Builds the chat from already-extracted text. Returns nil when the
     /// document has no usable text. Use `extractText(_:)` off the main
@@ -41,10 +44,20 @@ final class DocumentChat {
         guard !documentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
-        let truncated = String(documentText.prefix(Self.documentBudget))
-        let suffix = documentText.count > Self.documentBudget ? "\n\n[Truncated]" : ""
+        let generator: (any AIGenerator)?
+        do {
+            generator = try AIEngine.resolve()
+        } catch {
+            generator = nil
+            unavailable = AIError.from(error)
+            AIAnalyticsRun.unavailable(.chat, error: error)
+        }
+        let budget = generator?.textBudget(onDevice: Self.onDeviceDocumentBudget, cloud: Self.cloudDocumentBudget)
+            ?? Self.onDeviceDocumentBudget
+        let truncated = String(documentText.prefix(budget))
+        let suffix = documentText.count > budget ? "\n\n[Truncated]" : ""
 
-        let instructions = Instructions("""
+        let instructions = """
             You are a precise assistant answering questions about a PDF document.
             Use ONLY the document content below. If something isn't answerable from \
             the document, say so plainly — don't invent facts. Keep answers concise \
@@ -54,17 +67,27 @@ final class DocumentChat {
 
             Document content:
             \(truncated)\(suffix)
-            """)
+            """
 
-        self.instructions = instructions
-        self.session = LanguageModelSession(instructions: instructions)
+        self.session = generator?.makeChat(instructions: instructions)
     }
 
     /// Sends a user message and streams the assistant's response.
-    func send(_ text: String) {
+    func send(_ text: String, suggested: Bool = false) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        if session == nil {
+            status = .error((unavailable ?? .notConfigured).userMessage)
+            return
+        }
+        activeRun?.cancelled()
+        let userTurns = messages.filter { $0.role == .user }.count + 1
+        activeRun = AIAnalyticsRun(.chat, backend: session?.backend, [
+            .messageIndex: userTurns,
+            .suggested: suggested,
+            .queryLength: AppAnalytics.countBucket(trimmed.count),
+        ])
         messages.append(Message(role: .user, text: trimmed))
         let assistant = Message(role: .assistant, text: "", isStreaming: true)
         messages.append(assistant)
@@ -79,33 +102,41 @@ final class DocumentChat {
     }
 
     private func stream(prompt: String, into assistantID: UUID, allowRetry: Bool) async {
+        guard let session else { return }
         do {
             var accumulated = ""
-            for try await partial in session.streamResponse(to: Prompt(prompt)) {
+            for try await partial in session.stream(prompt) {
                 if Task.isCancelled { return }
-                accumulated = partial.content
+                accumulated = partial
                 updateMessage(id: assistantID) { $0.text = accumulated }
             }
+            if Task.isCancelled { return }
             updateMessage(id: assistantID) { $0.isStreaming = false }
             status = .idle
+            activeRun?.succeeded(outputChars: accumulated.count)
+            activeRun = nil
         } catch is CancellationError {
             return
-        } catch let error as LanguageModelSession.GenerationError {
+        } catch let error as AIError {
             if Task.isCancelled { return }
-            if case .exceededContextWindowSize = error, allowRetry {
-                // The transcript outgrew the 4k-token window. Start a fresh
+            if case .contextTooLong = error, allowRetry {
+                // The transcript outgrew the context window. Start a fresh
                 // session seeded with the document again (older turns are
                 // dropped) and retry once, so a long chat doesn't die for good.
-                session = LanguageModelSession(instructions: instructions)
+                session.reset()
                 await stream(prompt: prompt, into: assistantID, allowRetry: false)
                 return
             }
             removeMessage(id: assistantID)
             status = .error(Self.message(for: error))
+            activeRun?.failed(error)
+            activeRun = nil
         } catch {
             if Task.isCancelled { return }
             removeMessage(id: assistantID)
             status = .error(error.localizedDescription)
+            activeRun?.failed(error)
+            activeRun = nil
         }
     }
 
@@ -120,6 +151,8 @@ final class DocumentChat {
     func cancel() {
         task?.cancel()
         task = nil
+        activeRun?.cancelled()
+        activeRun = nil
         if let index = messages.lastIndex(where: { $0.isStreaming }) {
             if messages[index].text.isEmpty {
                 messages.remove(at: index)
@@ -139,24 +172,14 @@ final class DocumentChat {
         messages.removeAll { $0.id == id }
     }
 
-    private static func message(for error: LanguageModelSession.GenerationError) -> String {
+    private static func message(for error: AIError) -> String {
         switch error {
-        case .exceededContextWindowSize:
-            return "This conversation is too long for the on-device model. Start a new conversation to continue."
-        case .guardrailViolation:
-            return "The on-device model declined to answer that."
-        case .unsupportedLanguageOrLocale:
-            return "The on-device model doesn't support this language."
-        case .assetsUnavailable:
-            return "Apple Intelligence assets aren't ready yet. Try again in a few minutes."
-        case .rateLimited:
-            return "Too many AI requests right now. Please try again shortly."
-        case .concurrentRequests:
-            return "Another AI request is in progress. Try again in a moment."
-        case .refusal:
+        case .contextTooLong:
+            return "This conversation is too long for the AI model. Start a new conversation to continue."
+        case .refused:
             return "The model declined to answer that question."
         default:
-            return error.localizedDescription
+            return error.userMessage
         }
     }
 

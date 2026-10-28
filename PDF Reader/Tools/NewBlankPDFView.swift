@@ -31,6 +31,7 @@ struct NewBlankPDFView: View {
                 }
             }
         }
+        .trackScreen(.toolNewBlank)
     }
 
     private var formContent: some View {
@@ -55,7 +56,7 @@ struct NewBlankPDFView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Create") { create() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                         .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -80,6 +81,7 @@ struct NewBlankPDFView: View {
                 title: title.trimmingCharacters(in: .whitespacesAndNewlines),
                 in: modelContext
             )
+            AppAnalytics.toolCompleted(.newBlank, pageCount: blank.pageCount, [.option: pageSize.displayName])
             success = ToolSuccessResult(
                 title: "Blank PDF Created",
                 summary: "\(blank.pageCount) \(blank.pageCount == 1 ? "page" : "pages") · \(pageSize.displayName)",
@@ -87,6 +89,7 @@ struct NewBlankPDFView: View {
                 meteredFeature: nil
             )
         } catch {
+            AppAnalytics.toolFailed(.newBlank, error: error)
             self.error = error.localizedDescription
         }
     }

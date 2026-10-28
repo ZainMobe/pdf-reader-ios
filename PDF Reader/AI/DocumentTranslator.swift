@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModels
 import OSLog
 import PDFKit
 import SwiftData
@@ -33,11 +32,13 @@ final class DocumentTranslator {
 
     /// Per-batch character cap. Translation output often expands ~30% from the
     /// source, so this is conservative against the 4,096-token context window.
-    private static let perCallCharBudget = 2_400
+    private static let onDevicePerCallCharBudget = 2_400
+    private static let cloudPerCallCharBudget = 12_000
 
     private(set) var state: State = .idle
     private var task: Task<Void, Never>?
     private var pendingURL: URL?
+    private var activeRun: AIAnalyticsRun?
 
     func translate(_ document: Document, to language: TranslationLanguage) {
         cancelCurrent()
@@ -74,6 +75,19 @@ final class DocumentTranslator {
         let tempURL = FileManager.default.temporaryDirectory
             .appending(path: "translation-\(UUID().uuidString).pdf")
 
+        let generator: any AIGenerator
+        do {
+            generator = try AIEngine.resolve()
+        } catch {
+            AIAnalyticsRun.unavailable(.translate, error: error)
+            state = .failed(AIError.from(error).userMessage)
+            return
+        }
+        activeRun = AIAnalyticsRun(.translate, backend: generator.backend, [
+            .language: language.rawValue,
+            .pageBucket: AppAnalytics.pageBucket(pageCount),
+        ])
+
         task = Task { [weak self] in
             guard let self else { return }
 
@@ -91,6 +105,7 @@ final class DocumentTranslator {
 
             if totalLines == 0 {
                 translatorLog.error("[\(runID, privacy: .public)] no extractable text found in any page")
+                self.finishRun(label: "no_text")
                 self.state = .failed("This document has no extractable text. Try a PDF with selectable text.")
                 return
             }
@@ -113,13 +128,14 @@ final class DocumentTranslator {
 
                 let translated: [String]
                 do {
-                    translated = try await Self.translateLines(texts, languageName: languageName, runID: runID, pageIndex: pageIndex + 1)
+                    translated = try await Self.translateLines(texts, generator: generator, languageName: languageName, runID: runID, pageIndex: pageIndex + 1)
                 } catch is CancellationError {
                     translatorLog.notice("[\(runID, privacy: .public)] cancellation thrown during page \(pageIndex + 1)")
                     return
                 } catch {
                     if Task.isCancelled { return }
                     translatorLog.error("[\(runID, privacy: .public)] page \(pageIndex + 1) translation FAILED: \(String(describing: error), privacy: .public)")
+                    self.finishRun(failure: error)
                     self.state = .failed(Self.message(for: error))
                     return
                 }
@@ -168,6 +184,7 @@ final class DocumentTranslator {
             }
             guard let render else {
                 translatorLog.error("[\(runID, privacy: .public)] renderPDF returned nil")
+                self.finishRun(label: "render_failed")
                 self.state = .failed("Couldn't render the translated PDF.")
                 return
             }
@@ -175,6 +192,8 @@ final class DocumentTranslator {
 
             self.pendingURL = render.url
             self.state = .ready(translatedURL: render.url, pageCount: render.pageCount)
+            self.activeRun?.succeeded(outputChars: totalChars)
+            self.activeRun = nil
             translatorLog.notice("[\(runID, privacy: .public)] translate complete")
         }
     }
@@ -215,10 +234,14 @@ final class DocumentTranslator {
         context.insert(document)
         pendingURL = nil
         state = .idle
+        AppAnalytics.log(.aiResultAction, [.aiAction: AnalyticsAIAction.translate.rawValue, .action: "save_to_library"])
         return document
     }
 
     func discard() {
+        if pendingURL != nil {
+            AppAnalytics.log(.aiResultAction, [.aiAction: AnalyticsAIAction.translate.rawValue, .action: "discard"])
+        }
         if let url = pendingURL {
             try? FileManager.default.removeItem(at: url)
             pendingURL = nil
@@ -231,9 +254,28 @@ final class DocumentTranslator {
         discard()
     }
 
+    private func finishRun(failure: Error) {
+        activeRun?.failed(failure)
+        activeRun = nil
+    }
+
+    private func finishRun(label: String) {
+        if let run = activeRun {
+            AppAnalytics.log(.aiFailed, [
+                .aiAction: run.action.rawValue,
+                .aiBackend: run.backend?.rawValue ?? "none",
+                .errorType: label,
+                .durationMs: AppAnalytics.milliseconds(since: run.start),
+            ])
+        }
+        activeRun = nil
+    }
+
     private func cancelCurrent() {
         task?.cancel()
         task = nil
+        activeRun?.cancelled()
+        activeRun = nil
         if let url = pendingURL {
             try? FileManager.default.removeItem(at: url)
             pendingURL = nil
@@ -305,12 +347,14 @@ final class DocumentTranslator {
     /// `perCallCharBudget` and falling back to per-line on count mismatch.
     private static func translateLines(
         _ lines: [String],
+        generator: any AIGenerator,
         languageName: String,
         runID: String,
         pageIndex: Int
     ) async throws -> [String] {
         guard !lines.isEmpty else { return [] }
 
+        let perCallCharBudget = generator.textBudget(onDevice: onDevicePerCallCharBudget, cloud: cloudPerCallCharBudget)
         var batches: [[String]] = []
         var currentBatch: [String] = []
         var currentSize = 0
@@ -332,6 +376,7 @@ final class DocumentTranslator {
             if Task.isCancelled { return result }
             let translated = try await translateBatch(
                 lines: batch,
+                generator: generator,
                 languageName: languageName,
                 runID: runID,
                 pageIndex: pageIndex,
@@ -345,6 +390,7 @@ final class DocumentTranslator {
 
     private static func translateBatch(
         lines: [String],
+        generator: any AIGenerator,
         languageName: String,
         runID: String,
         pageIndex: Int,
@@ -360,6 +406,7 @@ final class DocumentTranslator {
             do {
                 let translated = try await translateSingleLine(
                     lines[0],
+                    generator: generator,
                     languageName: languageName,
                     runID: runID,
                     label: "\(tag) (single)"
@@ -368,13 +415,13 @@ final class DocumentTranslator {
                 return [translated]
             } catch is CancellationError {
                 throw CancellationError()
-            } catch let error as LanguageModelSession.GenerationError {
+            } catch let error as AIError {
                 // One oversized or blocked "line" (PDFKit sometimes returns a
                 // whole column as a single selection) must not abort the whole
                 // document. Keep the original text for it, matching the
                 // per-line fallback path below.
                 switch error {
-                case .exceededContextWindowSize, .guardrailViolation, .refusal:
+                case .contextTooLong, .blocked, .refused:
                     translatorLog.error("\(tag, privacy: .public): single-line skipped (\(String(describing: error), privacy: .public)) — keeping original")
                     return [lines[0]]
                 default:
@@ -390,26 +437,25 @@ final class DocumentTranslator {
         let joined = lines.joined(separator: lineSeparator)
         translatorLog.debug("\(tag, privacy: .public): batched (lines=\(lines.count) chars=\(batchChars) prompt=\(joined.count))")
 
-        let instructions = Instructions("""
+        let instructions = """
             Translate each segment of text into \(languageName). The segments are \
             separated by the marker "|||" on its own line. Output the translations \
             in the same order, separated by the same "|||" marker on its own line. \
-            Reply with only the translations — no commentary, no labels, no extra \
+            Reply with only the translations: no commentary, no labels, no extra \
             text. Keep proper nouns, IDs, codes, dates, and numbers unchanged.
-            """)
-        let session = LanguageModelSession(instructions: instructions)
+            """
 
         let started = Date()
-        let response: LanguageModelSession.Response<String>
+        let response: String
         do {
-            response = try await session.respond(to: Prompt(joined))
+            response = try await generator.respond(instructions: instructions, prompt: joined)
         } catch {
             translatorLog.error("\(tag, privacy: .public): batched call FAILED in \(Self.elapsed(started))ms: \(String(describing: error), privacy: .public)")
             throw error
         }
-        translatorLog.debug("\(tag, privacy: .public): batched call done in \(Self.elapsed(started))ms (responseChars=\(response.content.count))")
+        translatorLog.debug("\(tag, privacy: .public): batched call done in \(Self.elapsed(started))ms (responseChars=\(response.count))")
 
-        let parts = response.content
+        let parts = response
             .components(separatedBy: lineSeparator)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -425,6 +471,7 @@ final class DocumentTranslator {
             do {
                 let translated = try await translateSingleLine(
                     line,
+                    generator: generator,
                     languageName: languageName,
                     runID: runID,
                     label: "\(tag) fallback \(idx + 1)/\(lines.count)"
@@ -440,21 +487,21 @@ final class DocumentTranslator {
 
     private static func translateSingleLine(
         _ line: String,
+        generator: any AIGenerator,
         languageName: String,
         runID: String,
         label: String
     ) async throws -> String {
-        let instructions = Instructions("""
+        let instructions = """
             Translate the user's text into \(languageName). Reply with only the \
-            translation — no commentary, no labels. Keep proper nouns, codes, IDs, \
+            translation: no commentary, no labels. Keep proper nouns, codes, IDs, \
             dates, and numbers unchanged.
-            """)
-        let session = LanguageModelSession(instructions: instructions)
+            """
         let started = Date()
         do {
-            let response = try await session.respond(to: Prompt(line))
-            translatorLog.debug("\(label, privacy: .public): ok in \(Self.elapsed(started))ms (in=\(line.count) out=\(response.content.count))")
-            return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let response = try await generator.respond(instructions: instructions, prompt: line)
+            translatorLog.debug("\(label, privacy: .public): ok in \(Self.elapsed(started))ms (in=\(line.count) out=\(response.count))")
+            return response.trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             translatorLog.error("\(label, privacy: .public): FAILED in \(Self.elapsed(started))ms: \(String(describing: error), privacy: .public)")
             throw error
@@ -462,23 +509,15 @@ final class DocumentTranslator {
     }
 
     private static func message(for error: Error) -> String {
-        if let gen = error as? LanguageModelSession.GenerationError {
-            switch gen {
-            case .exceededContextWindowSize:
-                return "A line on this page was too large to translate."
-            case .guardrailViolation:
-                return "Translation was blocked by on-device safety filters."
-            case .unsupportedLanguageOrLocale:
-                return "The on-device model doesn't support translating this content."
-            case .assetsUnavailable:
-                return "Apple Intelligence assets aren't ready yet. Try again in a few minutes."
-            case .rateLimited:
-                return "Too many AI requests right now. Please try again shortly."
-            default:
-                return gen.localizedDescription
-            }
+        let ai = AIError.from(error)
+        switch ai {
+        case .contextTooLong:
+            return "A line on this page was too large to translate."
+        case .blocked:
+            return "Translation was blocked by the model's safety filters."
+        default:
+            return ai.userMessage
         }
-        return error.localizedDescription
     }
 
     // MARK: - Rendering

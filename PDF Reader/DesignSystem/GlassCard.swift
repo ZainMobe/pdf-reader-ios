@@ -10,10 +10,7 @@ struct GlassCard<Content: View>: View {
     var body: some View {
         content
             .padding(DesignSystem.Spacing.l)
-            .glassEffect(
-                tint.map { Glass.regular.tint($0) } ?? .regular,
-                in: .rect(cornerRadius: cornerRadius)
-            )
+            .compatGlass(.rect(cornerRadius), tint: tint)
     }
 }
 

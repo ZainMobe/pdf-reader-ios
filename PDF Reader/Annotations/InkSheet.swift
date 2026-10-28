@@ -56,11 +56,12 @@ struct InkSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { commitAndDismiss() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                 }
             }
             .task { await renderPage() }
         }
+        .trackScreen(.ink)
     }
 
     /// Renders the page off the main thread. At 2x on a large page this can

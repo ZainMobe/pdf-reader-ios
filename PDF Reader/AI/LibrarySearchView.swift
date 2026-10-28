@@ -10,6 +10,8 @@ struct LibrarySearchView: View {
     @Query(sort: \Document.addedAt, order: .reverse) private var documents: [Document]
 
     @State private var ask = LibraryAsk()
+    @State private var showingCloudConsent = false
+    @AppStorage(AppSettings.cloudAIConsent) private var cloudConsent = false
     @State private var query = ""
     @State private var openingSource: Int?
     @FocusState private var fieldFocused: Bool
@@ -58,6 +60,9 @@ struct LibrarySearchView: View {
             .task(id: indexFingerprint) {
                 await ask.refreshIndex(from: documents)
             }
+            .cloudAIConsent(isPresented: $showingCloudConsent) {
+                if !ask.lastQuery.isEmpty { ask.ask(ask.lastQuery) }
+            }
             .onAppear {
                 if !initialQuery.isEmpty, query.isEmpty {
                     query = initialQuery
@@ -70,6 +75,7 @@ struct LibrarySearchView: View {
                 }
             }
         }
+        .trackScreen(.aiLibraryAsk)
     }
 
     private var documentsWithTextCount: Int {
@@ -120,7 +126,20 @@ struct LibrarySearchView: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.m)
         .padding(.vertical, DesignSystem.Spacing.s)
-        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+        .compatGlass(.rect(DesignSystem.Radius.medium))
+    }
+
+    private var answerDescription: String {
+        switch AIEngine.availability() {
+        case .ready(.onDevice):
+            return "Answers come from Apple Intelligence and cite the exact passages."
+        case .ready(.cloud):
+            return "Answers come from Claude (cloud) and cite the exact passages."
+        case .needsCloudConsent:
+            return "Allow Cloud AI to get written answers; until then you'll see the best matching passages."
+        default:
+            return "AI answers aren't available on this device, so you'll get the best matching passages without a written answer."
+        }
     }
 
     @ViewBuilder
@@ -133,9 +152,15 @@ struct LibrarySearchView: View {
             )
         } else {
             VStack(alignment: .leading, spacing: DesignSystem.Spacing.m) {
-                Text("Searches \(documentsWithTextCount) \(documentsWithTextCount == 1 ? "document" : "documents") on this device. \(ask.canAnswer ? "Answers come from Apple Intelligence and cite the exact passages." : "Apple Intelligence is off, so you'll get the best matching passages without a written answer.")")
+                Text("Searches \(documentsWithTextCount) \(documentsWithTextCount == 1 ? "document" : "documents") on this device. \(answerDescription)")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                if AIEngine.availability() == .needsCloudConsent {
+                    Button("Allow Cloud AI for written answers") {
+                        showingCloudConsent = true
+                    }
+                    .font(.footnote.weight(.semibold))
+                }
                 Text("Try asking")
                     .font(.subheadline.weight(.semibold))
                 ForEach(suggestions, id: \.self) { suggestion in
@@ -264,6 +289,8 @@ struct LibrarySearchView: View {
             let page = await LibraryAsk.pageIndex(for: source.passage, in: doc.fileURL)
             openingSource = nil
             router.pageToOpen = page
+            router.pendingOpenSource = .aiCitation
+            AppAnalytics.log(.aiResultAction, [.aiAction: AnalyticsAIAction.askLibrary.rawValue, .action: "open_citation"])
             router.documentToOpen = doc.id
             router.libraryRequestToken &+= 1
             dismiss()

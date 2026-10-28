@@ -32,11 +32,13 @@ struct ReaderSidebarView: View {
                 switch section {
                 case .pages:
                     ThumbnailList(documentURL: document.fileURL) { pageIndex in
+                        AppAnalytics.readerAction(.thumbnails)
                         onNavigatePage(pageIndex)
                         dismiss()
                     }
                 case .outline:
                     OutlineList(documentURL: document.fileURL) { pageIndex, point in
+                        AppAnalytics.readerAction(.outline)
                         onNavigateDestination(pageIndex, point)
                         dismiss()
                     }
@@ -45,11 +47,13 @@ struct ReaderSidebarView: View {
                         document: document,
                         currentPageIndex: currentPageIndex
                     ) { pageIndex in
+                        AppAnalytics.readerAction(.bookmarks)
                         onNavigatePage(pageIndex)
                         dismiss()
                     }
                 case .annotations:
                     AnnotationsList(documentURL: document.fileURL) { pageIndex, bounds in
+                        AppAnalytics.readerAction(.annotationsList)
                         onNavigateAnnotation(pageIndex, bounds)
                         dismiss()
                     }
@@ -57,6 +61,10 @@ struct ReaderSidebarView: View {
             }
             .navigationTitle("Browse")
             .navigationBarTitleDisplayMode(.inline)
+            .trackScreen(.readerSidebar)
+            .onChange(of: section) { _, newSection in
+                AppAnalytics.log(.readerAction, [.action: "sidebar_tab", .option: newSection.rawValue])
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -280,6 +288,7 @@ private struct BookmarkList: View {
                         for index in offsets {
                             modelContext.delete(allBookmarks[index])
                         }
+                        AppAnalytics.log(.readerAction, [.action: "delete_bookmark", .count: offsets.count])
                     }
                 }
             }
@@ -293,6 +302,7 @@ private struct BookmarkList: View {
             label: "Page \(currentPageIndex + 1)"
         )
         modelContext.insert(bookmark)
+        AppAnalytics.readerAction(.addBookmark)
     }
 }
 

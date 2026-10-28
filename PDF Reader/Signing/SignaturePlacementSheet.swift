@@ -76,7 +76,7 @@ struct SignaturePlacementSheet: View {
                                 .foregroundStyle(.secondary)
                         }
                         .padding(DesignSystem.Spacing.xl)
-                        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                        .compatGlass(.rect(DesignSystem.Radius.medium))
                     }
 
                     if didLoadPage {
@@ -101,12 +101,13 @@ struct SignaturePlacementSheet: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Place") { commit() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                         .disabled(!didLoadPage)
                 }
             }
             .task { await renderPage() }
         }
+        .trackScreen(.signaturePlacement)
     }
 
     private func signatureOverlay(in pageRect: CGRect) -> some View {
@@ -185,7 +186,7 @@ struct SignaturePlacementSheet: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.m)
         .padding(.vertical, DesignSystem.Spacing.s)
-        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+        .compatGlass(.rect(DesignSystem.Radius.medium))
     }
 
     private func resizeHandle(

@@ -18,7 +18,7 @@ struct FormFillSheet: View {
                     ToolbarItem(placement: .topBarLeading) {
                         HStack(spacing: DesignSystem.Spacing.xs) {
                             Image(systemName: "sparkles")
-                            Text("On-device")
+                            Text(AIEngine.availability().backend?.displayName ?? "On-device")
                         }
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
@@ -30,6 +30,7 @@ struct FormFillSheet: View {
                 .task { filler.analyzeAndSuggest(document) }
                 .onDisappear { filler.cancel() }
         }
+        .trackScreen(.aiFormFill)
     }
 
     @ViewBuilder
@@ -57,7 +58,7 @@ struct FormFillSheet: View {
                 Text("Applied \(applied) suggestion\(applied == 1 ? "" : "s"). Close to see the updated PDF.")
             } actions: {
                 Button("Done") { dismiss() }
-                    .buttonStyle(.glassProminent)
+                    .compatGlassButtonStyle(prominent: true)
             }
         case .failed(let message):
             ContentUnavailableView(
@@ -111,7 +112,7 @@ struct FormFillSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
             .disabled(acceptedCount == 0)
         }
         .padding(DesignSystem.Spacing.l)

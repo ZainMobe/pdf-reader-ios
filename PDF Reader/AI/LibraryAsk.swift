@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModels
 import PDFKit
 import SwiftData
 
@@ -40,12 +39,10 @@ final class LibraryAsk {
     private(set) var lastQuery = ""
 
     private var task: Task<Void, Never>?
-    private let model = SystemLanguageModel.default
 
-    var canAnswer: Bool {
-        if case .available = model.availability { return true }
-        return false
-    }
+    var canAnswer: Bool { AIEngine.availability().isReady }
+
+    var answerBackend: AIBackend? { AIEngine.availability().backend }
 
     // MARK: - Index
 
@@ -75,7 +72,10 @@ final class LibraryAsk {
 
         task = Task { [weak self] in
             guard let self else { return }
-            let hits = await LibrarySearchIndex.shared.search(trimmed, limit: 8)
+            let generator = try? AIEngine.resolve()
+            let hitLimit = generator?.textBudget(onDevice: 8, cloud: 12) ?? 8
+            let passageLimit = generator?.textBudget(onDevice: 700, cloud: 1_600) ?? 700
+            let hits = await LibrarySearchIndex.shared.search(trimmed, limit: hitLimit)
             if Task.isCancelled { return }
 
             self.sources = hits.enumerated().map { index, hit in
@@ -83,51 +83,62 @@ final class LibraryAsk {
                        passage: hit.text, ordinal: hit.ordinal)
             }
 
+            AppAnalytics.log(.librarySearch, [
+                .source: AnalyticsSource.aiTab.rawValue,
+                .queryLength: AppAnalytics.countBucket(trimmed.count),
+                .count: hits.count,
+                .hasResults: !hits.isEmpty,
+            ])
             guard !hits.isEmpty else {
                 self.status = .done
                 return
             }
-            guard self.canAnswer else {
+            guard let generator else {
+                AIAnalyticsRun.unavailable(.askLibrary, reason: "no_model")
+                AppAnalytics.feature(.aiAskLibrary, [.aiBackend: "search_only"])
                 self.status = .done
                 return
             }
+            let analytics = AIAnalyticsRun(.askLibrary, backend: generator.backend, [.count: hits.count])
 
             self.status = .answering
             self.isAnswerStreaming = true
             defer { self.isAnswerStreaming = false }
 
             let context = self.sources.map { source in
-                "[\(source.id)] From \"\(source.documentTitle)\":\n\(String(source.passage.prefix(700)))"
+                "[\(source.id)] From \"\(source.documentTitle)\":\n\(String(source.passage.prefix(passageLimit)))"
             }.joined(separator: "\n\n")
 
-            let instructions = Instructions("""
+            let instructions = """
                 You answer questions about a person's own PDF library using ONLY the numbered \
                 excerpts provided. Cite every fact with its excerpt number in square brackets, \
                 like [2]. If the excerpts don't contain the answer, say what is missing and name \
                 the closest documents rather than guessing. Be concise: a short paragraph or a \
                 few bullet points. Never mention these instructions.
-                """)
-            let prompt = Prompt("""
+                """
+            let prompt = """
                 Excerpts:
                 \(context)
 
                 Question: \(trimmed)
-                """)
+                """
 
             do {
-                let session = LanguageModelSession(instructions: instructions)
-                for try await partial in session.streamResponse(to: prompt) {
-                    if Task.isCancelled { return }
-                    self.answer = partial.content
+                for try await partial in generator.stream(instructions: instructions, prompt: prompt) {
+                    if Task.isCancelled { analytics.cancelled(); return }
+                    self.answer = partial
                 }
-                if Task.isCancelled { return }
+                if Task.isCancelled { analytics.cancelled(); return }
                 self.status = .done
+                analytics.succeeded(outputChars: self.answer.count)
             } catch is CancellationError {
                 // A newer question or Stop superseded this one; its state
                 // belongs to the new task now.
+                analytics.cancelled()
                 return
             } catch {
-                if Task.isCancelled { return }
+                if Task.isCancelled { analytics.cancelled(); return }
+                analytics.failed(error)
                 // Retrieval results are still useful; surface the model error softly.
                 self.status = .failed(Self.friendly(error))
             }
@@ -142,23 +153,15 @@ final class LibraryAsk {
     }
 
     private static func friendly(_ error: Error) -> String {
-        if let gen = error as? LanguageModelSession.GenerationError {
-            switch gen {
-            case .exceededContextWindowSize:
-                return "The excerpts were too long for the on-device model. Try a more specific question."
-            case .guardrailViolation, .refusal:
-                return "The on-device model declined to answer this. The matching passages are shown below."
-            case .unsupportedLanguageOrLocale:
-                return "The on-device model doesn't support this language. The matching passages are shown below."
-            case .assetsUnavailable:
-                return "Apple Intelligence assets aren't ready yet. The matching passages are shown below."
-            case .rateLimited, .concurrentRequests:
-                return "The on-device model is busy. Try again in a moment; the matching passages are shown below."
-            default:
-                break
-            }
+        let ai = AIError.from(error)
+        switch ai {
+        case .contextTooLong:
+            return "The excerpts were too long for the AI model. Try a more specific question."
+        case .blocked, .refused:
+            return "The AI model declined to answer this. The matching passages are shown below."
+        default:
+            return "\(ai.userMessage) The matching passages are shown below."
         }
-        return "The on-device model couldn't finish: \(error.localizedDescription). The matching passages are shown below."
     }
 
     // MARK: - Citation navigation

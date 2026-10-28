@@ -24,6 +24,28 @@ struct SettingsHomeView: View {
     @AppStorage(AppSettings.highlightColor)
     private var highlightColorRaw: String = HighlightColor.yellow.rawValue
 
+    @AppStorage(AppSettings.aiProcessingMode)
+    private var aiProcessingModeRaw: String = AIProcessingMode.automatic.rawValue
+
+    @AppStorage(AppSettings.cloudAIConsent)
+    private var cloudAIConsent = false
+
+    @State private var analyticsEnabled = AppAnalytics.isCollectionEnabled
+
+    private var aiFooter: String {
+        guard AIEngine.isCloudConfigured else {
+            return "All AI features run locally on this device using Apple's Foundation Models. Nothing leaves your device."
+        }
+        switch AIProcessingMode(rawValue: aiProcessingModeRaw) ?? .automatic {
+        case .automatic:
+            return "Uses Apple Intelligence on this device when available. Otherwise, with your permission, document text is sent to Claude (Anthropic) to generate results. It isn't used for training."
+        case .onDeviceOnly:
+            return "Nothing leaves your device. AI features need Apple Intelligence (iPhone 15 Pro or newer with iOS 26)."
+        case .cloudOnly:
+            return "Document text is sent to Claude (Anthropic) to generate results. Best quality, every language and long documents. It isn't used for training."
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -33,6 +55,7 @@ struct SettingsHomeView: View {
                     // management sheet would be empty for it.
                     if entitlements.isPro, entitlements.activeProductID != SubscriptionTier.lifetime.id {
                         Button {
+                            AppAnalytics.settingChanged("manage_subscription", "opened")
                             showingManageSubscription = true
                         } label: {
                             Label("Manage Subscription", systemImage: "creditcard")
@@ -53,9 +76,16 @@ struct SettingsHomeView: View {
                     ) {
                         Label("Invite Friends", systemImage: "person.2")
                     }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        AppAnalytics.log(.inviteShared, [.source: AnalyticsSource.settings.rawValue])
+                        AppAnalytics.feature(.invite, source: AnalyticsSource.settings.rawValue)
+                    })
                     Link(destination: AppLinks.writeReview) {
                         Label("Rate PDF Editor", systemImage: "star")
                     }
+                    .simultaneousGesture(TapGesture().onEnded {
+                        AppAnalytics.log(.reviewPromptRequested, [.source: AnalyticsSource.settings.rawValue])
+                    })
                 } header: {
                     Text("Spread the word")
                 } footer: {
@@ -113,10 +143,31 @@ struct SettingsHomeView: View {
                     }
                 }
                 Section("AI") {
-                    LabeledContent("Engine", value: "On-device")
-                    Text("All AI features run locally on this device using Apple's Foundation Models. Nothing leaves your device.")
+                    if AIEngine.isCloudConfigured {
+                        Picker("Processing", selection: $aiProcessingModeRaw) {
+                            ForEach(AIProcessingMode.allCases) { mode in
+                                Text(mode.displayName).tag(mode.rawValue)
+                            }
+                        }
+                        Toggle("Allow Cloud AI", isOn: Binding(
+                            get: { cloudAIConsent },
+                            set: { value in
+                                cloudAIConsent = value
+                                AppAnalytics.settingChanged("cloud_ai_consent", value ? "on" : "off")
+                            }
+                        ))
+                    }
+                    LabeledContent("Active engine", value: AIEngine.availability().backend?.displayName ?? "Unavailable")
+                    Text(aiFooter)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                }
+                Section {
+                    Toggle("Share Usage Analytics", isOn: $analyticsEnabled)
+                } header: {
+                    Text("Privacy")
+                } footer: {
+                    Text("Anonymous usage data, such as which screens and tools are used, helps us decide what to improve next. It never includes your documents, file names or anything you type.")
                 }
                 Section("Legal") {
                     Link(destination: URL(string: "https://propdfeditor.online/terms.html")!) {
@@ -132,10 +183,32 @@ struct SettingsHomeView: View {
             }
             .navigationTitle("Settings")
             .sheet(isPresented: $showingPaywall) {
-                PaywallView()
+                PaywallView(source: .settings)
+            }
+            .onChange(of: displayModeRaw) { _, value in
+                AppAnalytics.settingChanged("default_page_mode", String(value))
+            }
+            .onChange(of: displayDirectionRaw) { _, value in
+                AppAnalytics.settingChanged("default_scroll_direction", String(value))
+            }
+            .onChange(of: highlightColorRaw) { _, value in
+                AppAnalytics.settingChanged("highlight_color", value)
+            }
+            .onChange(of: aiProcessingModeRaw) { _, value in
+                AppAnalytics.settingChanged("ai_processing_mode", value)
+                AnalyticsUserProperties.refreshEnvironment()
+            }
+            .onChange(of: cloudAIConsent) { _, _ in
+                AnalyticsUserProperties.refreshEnvironment()
+            }
+            .onChange(of: analyticsEnabled) { _, value in
+                if !value { AppAnalytics.settingChanged("usage_analytics", "off") }
+                AppAnalytics.isCollectionEnabled = value
+                if value { AppAnalytics.settingChanged("usage_analytics", "on") }
             }
             .manageSubscriptionsSheet(isPresented: $showingManageSubscription)
         }
+        .trackScreen(.settings)
     }
 }
 

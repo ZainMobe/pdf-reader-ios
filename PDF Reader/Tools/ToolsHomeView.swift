@@ -22,6 +22,25 @@ struct ToolsHomeView: View {
         case newBlank, merge, split, watermark, pageNumbers, compress, removePassword
         case imagesToPDF, fileToPDF, pdfToImages, pdfToWord, protect, flatten, compare
         var id: Self { self }
+
+        var analyticsTool: AnalyticsTool {
+            switch self {
+            case .newBlank: .newBlank
+            case .merge: .merge
+            case .split: .split
+            case .watermark: .watermark
+            case .pageNumbers: .pageNumbers
+            case .compress: .compress
+            case .removePassword: .removePassword
+            case .imagesToPDF: .imagesToPDF
+            case .fileToPDF: .fileToPDF
+            case .pdfToImages: .pdfToImages
+            case .pdfToWord: .pdfToWord
+            case .protect: .protect
+            case .flatten: .flatten
+            case .compare: .compare
+            }
+        }
     }
 
     var body: some View {
@@ -30,6 +49,7 @@ struct ToolsHomeView: View {
                 Section("Create") {
                     if VNDocumentCameraViewController.isSupported {
                         Button {
+                            AppAnalytics.toolOpened(.scan, source: .toolsTab)
                             showingScanner = true
                         } label: {
                             row("Scan to PDF", systemImage: "doc.viewfinder", subtitle: "Capture paper documents with OCR")
@@ -51,19 +71,19 @@ struct ToolsHomeView: View {
                     }
                     .buttonStyle(.plain)
                     Button {
-                        gated { activeSheet = .fileToPDF }
+                        gated(.fileToPDF)
                     } label: {
                         proRow("File to PDF", systemImage: "doc.text.below.ecg", subtitle: "Word, Excel, PowerPoint, Pages, text, web pages")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        gated { activeSheet = .pdfToImages }
+                        gated(.pdfToImages)
                     } label: {
                         proRow("PDF to Images", systemImage: "photo.stack", subtitle: "Export pages as JPEG or PNG")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        gated { activeSheet = .pdfToWord }
+                        gated(.pdfToWord)
                     } label: {
                         proRow("PDF to Word", systemImage: "doc.richtext", subtitle: "Editable .docx or plain text")
                     }
@@ -71,13 +91,13 @@ struct ToolsHomeView: View {
                 }
                 Section("Organize") {
                     Button {
-                        gated { activeSheet = .merge }
+                        gated(.merge)
                     } label: {
                         proRow("Merge PDFs", systemImage: "doc.on.doc", subtitle: "Combine multiple PDFs into one")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        gated { activeSheet = .split }
+                        gated(.split)
                     } label: {
                         proRow("Split PDF", systemImage: "rectangle.split.2x1", subtitle: "Break a PDF into two documents")
                     }
@@ -85,13 +105,13 @@ struct ToolsHomeView: View {
                 }
                 Section("Review") {
                     Button {
-                        gated { activeSheet = .compare }
+                        gated(.compare)
                     } label: {
                         proRow("Compare PDFs", systemImage: "doc.on.doc.fill", subtitle: "See what changed between two versions")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        gated { activeSheet = .flatten }
+                        gated(.flatten)
                     } label: {
                         proRow("Flatten PDF", systemImage: "square.3.layers.3d.down.right", subtitle: "Lock annotations and form fields into the page")
                     }
@@ -99,13 +119,13 @@ struct ToolsHomeView: View {
                 }
                 Section("Stamp") {
                     Button {
-                        gated { activeSheet = .watermark }
+                        gated(.watermark)
                     } label: {
                         proRow("Add Watermark", systemImage: "drop", subtitle: "Diagonal text across every page")
                     }
                     .buttonStyle(.plain)
                     Button {
-                        gated { activeSheet = .pageNumbers }
+                        gated(.pageNumbers)
                     } label: {
                         proRow("Add Page Numbers", systemImage: "number", subtitle: "N / Total in the bottom-right")
                     }
@@ -113,7 +133,7 @@ struct ToolsHomeView: View {
                 }
                 Section("Security") {
                     Button {
-                        gated { activeSheet = .protect }
+                        gated(.protect)
                     } label: {
                         proRow(
                             "Protect PDF",
@@ -123,7 +143,7 @@ struct ToolsHomeView: View {
                     }
                     .buttonStyle(.plain)
                     Button {
-                        gated { activeSheet = .removePassword }
+                        gated(.removePassword)
                     } label: {
                         proRow(
                             "Remove Password",
@@ -135,7 +155,7 @@ struct ToolsHomeView: View {
                 }
                 Section("Optimize") {
                     Button {
-                        gated { activeSheet = .compress }
+                        gated(.compress)
                     } label: {
                         proRow("Compress PDF", systemImage: "arrow.down.right.and.arrow.up.left", subtitle: "Reduce file size for sharing")
                     }
@@ -143,6 +163,11 @@ struct ToolsHomeView: View {
                 }
             }
             .navigationTitle("Tools")
+            .trackScreen(.tools)
+            .onChange(of: activeSheet) { _, sheet in
+                guard let sheet else { return }
+                AppAnalytics.toolOpened(sheet.analyticsTool, source: .toolsTab)
+            }
             .overlay(alignment: .bottom) {
                 if isProcessingScan {
                     HStack(spacing: DesignSystem.Spacing.s) {
@@ -151,7 +176,7 @@ struct ToolsHomeView: View {
                     }
                     .padding(.horizontal, DesignSystem.Spacing.l)
                     .padding(.vertical, DesignSystem.Spacing.m)
-                    .glassEffect(.regular, in: .capsule)
+                    .compatGlass(.capsule)
                     .padding(.bottom, DesignSystem.Spacing.xl)
                 }
             }
@@ -177,7 +202,7 @@ struct ToolsHomeView: View {
                 ScannerLauncher(onCompletion: handleScan)
             }
             .sheet(isPresented: $showingPaywall) {
-                PaywallView()
+                PaywallView(source: .toolsTab)
             }
             .alert(
                 "Scan failed",
@@ -220,10 +245,11 @@ struct ToolsHomeView: View {
     /// Opens a Pro tool sheet if the user may use it. The free-tier use is
     /// recorded by `ToolSuccessView` once the tool actually produces output,
     /// so opening a sheet and cancelling costs nothing.
-    private func gated(_ action: () -> Void) {
+    private func gated(_ sheet: ToolSheet) {
         if entitlements.canUse(.tool) {
-            action()
+            activeSheet = sheet
         } else {
+            AppAnalytics.log(.toolBlocked, [.tool: sheet.analyticsTool.rawValue, .source: AnalyticsSource.toolsTab.rawValue])
             showingPaywall = true
         }
     }
@@ -234,15 +260,19 @@ struct ToolsHomeView: View {
             Task {
                 isProcessingScan = true
                 defer { isProcessingScan = false }
+                let started = Date()
                 do {
                     try await ScanToPDF.createDocument(from: images, in: modelContext)
+                    ScanAnalytics.completed(pages: images.count, source: .toolsTab, startedAt: started, context: modelContext)
                 } catch {
+                    ScanAnalytics.failed(error, source: .toolsTab)
                     scanError = error.localizedDescription
                 }
             }
         case .success:
             break
         case .failure(let err):
+            ScanAnalytics.failed(err, source: .toolsTab)
             scanError = err.localizedDescription
         }
     }

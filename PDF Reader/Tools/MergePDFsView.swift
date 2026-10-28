@@ -33,6 +33,7 @@ struct MergePDFsView: View {
                 }
             }
         }
+        .trackScreen(.toolMerge)
     }
 
     private var formContent: some View {
@@ -68,7 +69,7 @@ struct MergePDFsView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(mergeLabel) { merge() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                         .disabled(selected.count < 2 || isWorking)
                 }
             }
@@ -79,7 +80,7 @@ struct MergePDFsView: View {
                         Text("Merging…").font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -141,6 +142,7 @@ struct MergePDFsView: View {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let finalTitle = trimmedTitle.isEmpty ? "Merged PDF" : trimmedTitle
         isWorking = true
+        let started = Date()
         Task {
             defer { isWorking = false }
             // Evicted iCloud files open as nil; make every source local first
@@ -151,12 +153,14 @@ struct MergePDFsView: View {
             do {
                 let merged = try PDFOperations.merge(sources, title: finalTitle, in: modelContext)
                 try? modelContext.save()
+                AppAnalytics.toolCompleted(.merge, startedAt: started, pageCount: merged.pageCount, fileCount: sourceCount)
                 success = ToolSuccessResult(
                     title: "PDFs Merged",
                     summary: "Combined \(sourceCount) documents into 1 — \(merged.pageCount) pages total",
                     documents: [merged]
                 )
             } catch {
+                AppAnalytics.toolFailed(.merge, error: error)
                 self.error = error.localizedDescription
             }
         }

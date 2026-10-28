@@ -14,6 +14,9 @@ struct OnboardingView: View {
     /// Tracks the most recent navigation direction so the slide transition
     /// follows the swipe (forward → slide from trailing, back → from leading).
     @State private var goingForward: Bool = true
+    @State private var startedAt = Date()
+    @State private var furthestPage: OnboardingPage = .hero
+    @State private var didFinish = false
 
     var body: some View {
         ZStack {
@@ -30,6 +33,20 @@ struct OnboardingView: View {
         }
         .preferredColorScheme(.dark)
         .sensoryFeedback(.selection, trigger: page)
+        .trackScreen(.onboarding)
+        .onAppear {
+            startedAt = Date()
+            AppAnalytics.log(.onboardingStarted)
+            logPage(page)
+        }
+        .onChange(of: page) { _, newPage in
+            if newPage.rawValue > furthestPage.rawValue { furthestPage = newPage }
+            logPage(newPage)
+        }
+    }
+
+    private func logPage(_ page: OnboardingPage) {
+        AppAnalytics.log(.onboardingPageViewed, [.pageIndex: page.rawValue, .pageName: page.analyticsName])
     }
 
     // MARK: - Top bar
@@ -40,13 +57,13 @@ struct OnboardingView: View {
             if page != .final {
                 Button {
                     Haptics.impact(.light)
-                    finish()
+                    finish(skipped: true)
                 } label: {
                     Text("Skip")
                         .font(.footnote.weight(.medium))
                         .padding(.horizontal, DesignSystem.Spacing.m)
                         .padding(.vertical, DesignSystem.Spacing.s)
-                        .glassEffect(.regular.interactive(), in: .capsule)
+                        .compatGlass(.capsule, interactive: true)
                 }
                 .foregroundStyle(.white.opacity(0.9))
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
@@ -173,7 +190,16 @@ struct OnboardingView: View {
         }
     }
 
-    private func finish() {
+    private func finish(skipped: Bool = false) {
+        guard !didFinish else { return }
+        didFinish = true
+        AppAnalytics.log(.onboardingCompleted, [
+            .skipped: skipped,
+            .pageName: page.analyticsName,
+            .pagesSeen: furthestPage.rawValue + 1,
+            .seconds: AppAnalytics.seconds(since: startedAt),
+        ])
+        AppAnalytics.setUserProperty(.onboardingDone, "true")
         Haptics.success()
         onFinish()
     }
@@ -191,6 +217,16 @@ enum OnboardingPage: Int, CaseIterable, Identifiable {
 
     var previous: OnboardingPage? {
         OnboardingPage(rawValue: rawValue - 1)
+    }
+
+    var analyticsName: String {
+        switch self {
+        case .hero: "hero"
+        case .ai: "ai"
+        case .sign: "sign"
+        case .privacy: "privacy"
+        case .final: "final"
+        }
     }
 }
 

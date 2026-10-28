@@ -1,6 +1,5 @@
 import SwiftUI
 import PDFKit
-import FoundationModels
 import StoreKit
 
 /// ReaderView — the full reading surface for a single `Document`.
@@ -64,16 +63,25 @@ struct ReaderView: View {
     @State private var pdfReloadToken = UUID()
     @State private var controller: ReaderController
     @State private var readAloud = ReadAloud()
+    @State private var session = ReadingSessionTracker()
+    @State private var paywallSource: AnalyticsSource = .reader
+    @State private var inkSource: AnalyticsSource = .reader
+    private let openSource: AnalyticsSource?
 
-    init(document: Document) {
+    init(document: Document, openSource: AnalyticsSource? = nil) {
+        self.openSource = openSource
         _document = Bindable(wrappedValue: document)
         let controller = ReaderController()
         controller.initialPageIndex = document.lastPageIndex
         _controller = State(initialValue: controller)
     }
 
-    private let model = SystemLanguageModel.default
     private let entitlements = EntitlementStore.shared
+
+    @AppStorage(AppSettings.cloudAIConsent) private var cloudConsent = false
+    @AppStorage(AppSettings.aiProcessingMode) private var processingModeRaw = AIProcessingMode.automatic.rawValue
+    @State private var showingCloudConsent = false
+    @State private var pendingAIAction: (() -> Void)?
 
     @Environment(\.openWindow) private var openWindow
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -98,7 +106,7 @@ struct ReaderView: View {
                     controller: controller,
                     isRedactingArea: controller.isRedactingArea,
                     theme: readerTheme,
-                    onPencilAction: { startInk() }
+                    onPencilAction: { startInk(source: .readerPencil) }
                 )
                 .id(pdfReloadToken)
                 .background(Color(uiColor: readerTheme.viewBackground))
@@ -128,7 +136,7 @@ struct ReaderView: View {
                 }
                 .padding(.horizontal, DesignSystem.Spacing.l)
                 .padding(.vertical, DesignSystem.Spacing.s)
-                .glassEffect(.regular, in: .capsule)
+                .compatGlass(.capsule)
                 .padding(.top, DesignSystem.Spacing.s)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -140,7 +148,7 @@ struct ReaderView: View {
                     Text("Removing content…").font(.subheadline)
                 }
                 .padding(DesignSystem.Spacing.xl)
-                .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                .compatGlass(.rect(DesignSystem.Radius.medium))
             }
         }
         .animation(DesignSystem.Motion.snappy, value: readAloud.state)
@@ -152,6 +160,7 @@ struct ReaderView: View {
             Button("Mark All") {
                 let r = controller.redactOccurrences(of: findRedactText)
                 if r.marks > 0 { entitlements.recordUse(.editing) }
+                AppAnalytics.log(.redactionMarked, [.option: "find", .marks: r.marks, .pages: r.pages])
                 findRedactResult = r.marks == 0
                     ? "No matches for \"\(findRedactText)\"."
                     : "Marked \(r.marks) \(r.marks == 1 ? "match" : "matches") on \(r.pages) \(r.pages == 1 ? "page" : "pages"). Review them, then choose Apply Redactions."
@@ -192,9 +201,11 @@ struct ReaderView: View {
         } message: {
             Text(controller.saveError ?? "")
         }
+        .trackScreen(.reader)
         .onAppear {
-            controller.onPageChanged = { [document] index in
+            controller.onPageChanged = { [document, session] index in
                 if document.lastPageIndex != index { document.lastPageIndex = index }
+                session.pageViewed(index)
             }
             // Keep the Library card and file size in step with what was just
             // written; the persisted thumbnail otherwise shows the pre-edit
@@ -227,10 +238,15 @@ struct ReaderView: View {
                 ShareLink(item: document.fileURL) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
-                .simultaneousGesture(TapGesture().onEnded { controller.flushSave() })
+                .simultaneousGesture(TapGesture().onEnded {
+                    controller.flushSave()
+                    AppAnalytics.log(.documentShared, [.source: AnalyticsSource.reader.rawValue])
+                    AppAnalytics.feature(.shareDocument, source: AnalyticsSource.reader.rawValue)
+                })
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    AppAnalytics.readerAction(.findInDocument)
                     showingSearch = true
                 } label: {
                     Label("Find", systemImage: "magnifyingglass")
@@ -239,6 +255,7 @@ struct ReaderView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     sidebarSnapshotPageIndex = controller.currentPageIndex ?? 0
+                    AppAnalytics.readerAction(.browseSidebar)
                     showingSidebar = true
                 } label: {
                     Label("Browse", systemImage: "list.bullet.below.rectangle")
@@ -268,13 +285,14 @@ struct ReaderView: View {
                     if entitlements.canUse(.signing) {
                         showingSignatureSheet = true
                     } else {
+                        paywallSource = .reader
                         showingPaywall = true
                     }
                 } label: {
                     proLabel("Sign", systemImage: "signature")
                 }
             }
-            if case .available = model.availability {
+            if AIEngine.availability().isReady || AIEngine.availability() == .needsCloudConsent {
                 ToolbarItem(placement: .topBarTrailing) {
                     aiMenu
                 }
@@ -282,6 +300,10 @@ struct ReaderView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 viewMenu
             }
+        }
+        .cloudAIConsent(isPresented: $showingCloudConsent) {
+            pendingAIAction?()
+            pendingAIAction = nil
         }
         .sheet(isPresented: $showingSummary) {
             SummarySheet(document: document)
@@ -349,6 +371,8 @@ struct ReaderView: View {
                     rotationDegrees: rotation,
                     onPageAt: trigger.pageIndex
                 )
+                AppAnalytics.log(.signaturePlaced, [.pageBucket: AppAnalytics.pageBucket(document.pageCount)])
+                AppAnalytics.feature(.signature, source: AnalyticsSource.reader.rawValue)
                 document.isSigned = true
                 entitlements.recordUse(.signing)
                 ReviewPrompt.requestIfNeeded(using: requestReview)
@@ -363,6 +387,7 @@ struct ReaderView: View {
         .sheet(isPresented: $showingInkSheet) {
             InkSheet(document: document, pageIndex: inkPageIndex) { image in
                 controller.stampInk(image, onPageAt: inkPageIndex)
+                AppAnalytics.annotation(.ink, source: inkSource)
             }
         }
         .sheet(isPresented: $showingSidebar) {
@@ -375,7 +400,7 @@ struct ReaderView: View {
             )
         }
         .sheet(isPresented: $showingPaywall) {
-            PaywallView()
+            PaywallView(source: paywallSource)
         }
         .alert("Add Text", isPresented: $showingAddText) {
             TextField("Text to add", text: $newTextContent)
@@ -386,6 +411,7 @@ struct ReaderView: View {
                 if !value.trimmingCharacters(in: .whitespaces).isEmpty {
                     controller.addText(value)
                     entitlements.recordUse(.editing)
+                    AppAnalytics.annotation(.text)
                 }
             }
         } message: {
@@ -398,12 +424,13 @@ struct ReaderView: View {
                 let text = noteText
                 noteText = ""
                 controller.addStickyNote(text: text)
+                AppAnalytics.annotation(.stickyNote, [.option: text.isEmpty ? "empty" : "text"])
             }
         } message: {
             Text("Tap the note icon on the page to reveal the text later.")
         }
         .sheet(isPresented: $showingWatermarkSheet) {
-            WatermarkView(preselected: document)
+            WatermarkView(preselected: document, analyticsSource: .reader)
         }
         .task {
             if !didApplyDefaults {
@@ -414,8 +441,22 @@ struct ReaderView: View {
             await prepareDocument()
             document.lastOpenedAt = Date()
             document.isUnread = false
+            logOpenIfNeeded()
+        }
+        .onChange(of: displayMode) { old, new in
+            guard session.didLogOpen, old != new else { return }
+            AppAnalytics.readerAction(.displayMode, [.displayMode: displayModeName])
+        }
+        .onChange(of: displayDirection) { old, new in
+            guard session.didLogOpen, old != new else { return }
+            AppAnalytics.readerAction(.displayMode, [.displayMode: displayModeName])
+        }
+        .onChange(of: themeRaw) { _, newTheme in
+            AppAnalytics.readerAction(.readerTheme, [.theme: newTheme])
+            AppAnalytics.setUserProperty(.readerTheme, newTheme)
         }
         .onDisappear {
+            session.finish(pageCount: document.pageCount, theme: themeRaw, displayMode: displayModeName)
             // Speech would otherwise keep going (and keep other apps ducked)
             // after the reader is popped.
             readAloud.stop()
@@ -428,6 +469,9 @@ struct ReaderView: View {
             // user backgrounds the app quickly after annotating.
             if newPhase == .background || newPhase == .inactive {
                 controller.flushSave()
+                session.pause()
+            } else if newPhase == .active, session.didLogOpen {
+                session.resume()
             }
         }
     }
@@ -435,7 +479,10 @@ struct ReaderView: View {
     private var markupMenu: some View {
         Menu {
             Button {
-                controller.highlightSelection()
+                if controller.highlightSelection() {
+                    let color = UserDefaults.standard.string(forKey: AppSettings.highlightColor) ?? "yellow"
+                    AppAnalytics.annotation(.highlight, [.option: color])
+                }
             } label: {
                 Label("Highlight Selection", systemImage: "highlighter")
             }
@@ -446,7 +493,7 @@ struct ReaderView: View {
                 Label("Sticky Note", systemImage: "note.text.badge.plus")
             }
             Button {
-                startInk()
+                startInk(source: .reader)
             } label: {
                 Label("Ink", systemImage: "scribble.variable")
             }
@@ -462,6 +509,7 @@ struct ReaderView: View {
                 if entitlements.canUse(.editing) {
                     showingAddText = true
                 } else {
+                    paywallSource = .reader
                     showingPaywall = true
                 }
             } label: {
@@ -474,7 +522,11 @@ struct ReaderView: View {
                         Haptics.warning()
                         return
                     }
-                    gated { controller.redactSelection() }
+                    gated {
+                        controller.redactSelection()
+                        AppAnalytics.log(.redactionMarked, [.option: "selection"])
+                        AppAnalytics.feature(.redact, source: AnalyticsSource.reader.rawValue)
+                    }
                 } label: {
                     Label("Mark Selected Text", systemImage: "text.badge.minus")
                 }
@@ -483,7 +535,11 @@ struct ReaderView: View {
                         // Turning the mode off is free.
                         controller.isRedactingArea = false
                     } else {
-                        gated { controller.isRedactingArea = true }
+                        gated {
+                            controller.isRedactingArea = true
+                            AppAnalytics.log(.redactionMarked, [.option: "area_mode"])
+                            AppAnalytics.feature(.redact, source: AnalyticsSource.reader.rawValue)
+                        }
                     }
                 } label: {
                     Label(controller.isRedactingArea ? "Stop Marking Areas" : "Mark an Area",
@@ -497,6 +553,7 @@ struct ReaderView: View {
                         findRedactResult = nil
                         showingFindRedact = true
                     } else {
+                        paywallSource = .reader
                         showingPaywall = true
                     }
                 } label: {
@@ -510,6 +567,7 @@ struct ReaderView: View {
                         Label("Apply \(controller.pendingRedactionCount) \(controller.pendingRedactionCount == 1 ? "Redaction" : "Redactions")", systemImage: "eye.slash.fill")
                     }
                     Button {
+                        AppAnalytics.log(.redactionMarked, [.option: "clear", .marks: controller.pendingRedactionCount])
                         controller.clearRedactionMarks()
                     } label: {
                         Label("Clear Marks", systemImage: "eraser")
@@ -519,7 +577,10 @@ struct ReaderView: View {
                 proItem("Redact", systemImage: "rectangle.fill")
             }
             Button {
-                gated { showingWatermarkSheet = true }
+                gated {
+                    AppAnalytics.toolOpened(.watermark, source: .reader)
+                    showingWatermarkSheet = true
+                }
             } label: {
                 proItem("Add Watermark", systemImage: "drop")
             }
@@ -529,6 +590,7 @@ struct ReaderView: View {
                 if entitlements.canUse(.editing) {
                     showingPageEditor = true
                 } else {
+                    paywallSource = .reader
                     showingPaywall = true
                 }
             } label: {
@@ -542,31 +604,39 @@ struct ReaderView: View {
     private var aiMenu: some View {
         Menu {
             Button {
-                gated(.aiAction) { showingSummary = true }
+                logAITap(.summarize)
+                aiGated { showingSummary = true }
             } label: {
                 proItem("Summarize", systemImage: "text.alignleft")
             }
             Button {
-                gated(.aiAction) { showingChat = true }
+                logAITap(.chat)
+                aiGated { showingChat = true }
             } label: {
                 proItem("Chat with PDF", systemImage: "message")
             }
             Button {
-                gated(.aiAction) { showingTranslate = true }
+                logAITap(.translate)
+                aiGated { showingTranslate = true }
             } label: {
                 proItem("Translate", systemImage: "character.bubble")
             }
             Button {
-                gated(.aiAction) { showingExtract = true }
+                logAITap(.extract)
+                aiGated { showingExtract = true }
             } label: {
                 proItem("Extract Data", systemImage: "tablecells")
             }
             Button {
                 // Auto-Fill charges its free-tier use on Apply.
-                if entitlements.canUse(.aiAction) {
-                    showingFormFill = true
-                } else {
-                    showingPaywall = true
+                logAITap(.formFill)
+                withCloudConsent {
+                    if entitlements.canUse(.aiAction) {
+                        showingFormFill = true
+                    } else {
+                        paywallSource = .reader
+                        showingPaywall = true
+                    }
                 }
             } label: {
                 proItem("Auto-Fill Form", systemImage: "checklist")
@@ -600,6 +670,7 @@ struct ReaderView: View {
                 }
             }
             Button {
+                AppAnalytics.readerAction(.textView)
                 showingReflow = true
             } label: {
                 Label("Text View", systemImage: "text.justify.left")
@@ -607,18 +678,21 @@ struct ReaderView: View {
             Divider()
             Button {
                 if let url = AnnotationExporter.export(document) {
+                    AppAnalytics.readerAction(.exportAnnotations)
                     exportedAnnotations = ExportedFile(url: url)
                 }
             } label: {
                 Label("Export Annotations", systemImage: "square.and.arrow.up.on.square")
             }
             Button {
+                AppAnalytics.readerAction(.documentInfo)
                 showingInfo = true
             } label: {
                 Label("Document Info", systemImage: "info.circle")
             }
             if horizontalSizeClass == .regular {
                 Button {
+                    AppAnalytics.feature(.openNewWindow, source: AnalyticsSource.reader.rawValue)
                     openWindow(value: document.id)
                 } label: {
                     Label("Open in New Window", systemImage: "macwindow.badge.plus")
@@ -632,12 +706,14 @@ struct ReaderView: View {
     private var undoFloatingButton: some View {
         Button {
             controller.undoLastEdit()
+            AppAnalytics.log(.annotationUndone)
+            AppAnalytics.feature(.undo, source: AnalyticsSource.reader.rawValue)
         } label: {
             Image(systemName: "arrow.uturn.backward")
                 .font(.body.weight(.semibold))
                 .frame(width: 44, height: 44)
         }
-        .buttonStyle(.glass)
+        .compatGlassButtonStyle()
         .clipShape(Circle())
         .accessibilityLabel("Undo last edit")
         .padding(.trailing, DesignSystem.Spacing.m)
@@ -654,7 +730,7 @@ struct ReaderView: View {
                 passwordError = nil
                 showingPasswordSheet = true
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
         }
     }
 
@@ -669,7 +745,7 @@ struct ReaderView: View {
             Button("Try Again") {
                 Task { await prepareDocument() }
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
         }
     }
 
@@ -690,6 +766,7 @@ struct ReaderView: View {
         isPreparing = false
         guard let locked = status else {
             openFailed = true
+            AppAnalytics.log(.documentOpenFailed, [.errorType: "unreadable", .encrypted: false])
             return
         }
         openFailed = false
@@ -718,10 +795,12 @@ struct ReaderView: View {
             return
         }
         guard pdf.unlock(withPassword: password) else {
+            AppAnalytics.log(.readerAction, [.action: AnalyticsFeature.unlockPassword.rawValue, .success: false])
             passwordError = "Incorrect password. Try again."
             return
         }
         DocumentPasswordStore.store(password, for: document.fileURL)
+        AppAnalytics.readerAction(.unlockPassword)
         isLocked = false
         passwordError = nil
         showingPasswordSheet = false
@@ -734,6 +813,8 @@ struct ReaderView: View {
             defer { isApplyingRedactions = false }
             do {
                 let result = try await controller.applyRedactions()
+                AppAnalytics.log(.redactionApplied, [.marks: result.marksApplied, .pages: result.pagesRedacted])
+                AppAnalytics.feature(.redact, source: AnalyticsSource.reader.rawValue, [.option: "apply"])
                 // The text layer changed: refresh the searchable text and
                 // the Library thumbnail so nothing redacted lingers in search.
                 if let pdf = PDFDocument.opened(at: document.fileURL) {
@@ -745,6 +826,7 @@ struct ReaderView: View {
                 }
                 redactionResultMessage = "Removed content under \(result.marksApplied) \(result.marksApplied == 1 ? "mark" : "marks") on \(result.pagesRedacted) \(result.pagesRedacted == 1 ? "page" : "pages")."
             } catch {
+                AppAnalytics.log(.redactionApplied, [.success: false, .errorType: AppAnalytics.errorLabel(error)])
                 redactionError = error.localizedDescription
             }
         }
@@ -752,20 +834,73 @@ struct ReaderView: View {
 
     private var readerTheme: ReaderTheme { ReaderTheme(rawValue: themeRaw) ?? .light }
 
-    private func startInk() {
+    private func startInk(source: AnalyticsSource) {
         guard let index = controller.currentPageIndex else { return }
+        inkSource = source
         inkPageIndex = index
         showingInkSheet = true
     }
 
+    private var displayModeName: String {
+        let mode: String
+        switch displayMode {
+        case .singlePage: mode = "single"
+        case .singlePageContinuous: mode = "continuous"
+        case .twoUp: mode = "two_up"
+        case .twoUpContinuous: mode = "two_up_continuous"
+        @unknown default: mode = "other"
+        }
+        return displayDirection == .horizontal ? "\(mode)_horizontal" : mode
+    }
+
+    private func logOpenIfNeeded() {
+        guard !openFailed else { return }
+        guard !session.didLogOpen else {
+            session.resume()
+            return
+        }
+        session.markOpened()
+        session.resume()
+        let source = openSource ?? IncomingFileRouter.shared.takeOpenSource() ?? .library
+        let size = (try? FileManager.default.attributesOfItem(atPath: document.fileURL.path)[.size]) as? Int64
+        AppAnalytics.log(.documentOpened, [
+            .source: source.rawValue,
+            .pageBucket: AppAnalytics.pageBucket(document.pageCount),
+            .sizeBucket: AppAnalytics.sizeBucket(bytes: size),
+            .encrypted: isLocked,
+            .theme: themeRaw,
+        ])
+        AppAnalytics.feature(.readDocument, source: source.rawValue)
+    }
+
     private func toggleReadAloud() {
         if readAloud.state == .idle {
+            AppAnalytics.readerAction(.readAloud)
             readAloud.onPageChange = { index in
                 controller.goToPage(index)
             }
             readAloud.start(document: document, fromPage: controller.currentPageIndex ?? 0)
         } else {
             readAloud.stop()
+        }
+    }
+
+    private func logAITap(_ action: AnalyticsAIAction) {
+        AppAnalytics.log(.aiActionTapped, [.aiAction: action.rawValue, .source: AnalyticsSource.reader.rawValue])
+    }
+
+    private func withCloudConsent(_ action: @escaping () -> Void) {
+        if AIEngine.availability() == .needsCloudConsent {
+            pendingAIAction = action
+            showingCloudConsent = true
+        } else {
+            action()
+        }
+    }
+
+    private func aiGated(_ action: @escaping () -> Void) {
+        withCloudConsent {
+            gated(.aiAction, action)
         }
     }
 
@@ -776,6 +911,7 @@ struct ReaderView: View {
         if entitlements.unlock(feature) {
             action()
         } else {
+            paywallSource = .reader
             showingPaywall = true
         }
     }

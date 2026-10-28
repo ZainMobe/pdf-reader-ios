@@ -59,6 +59,13 @@ final class IncomingFileRouter {
     /// Pending action; RootView clears it once handled.
     var pendingAction: AppAction?
 
+    var pendingOpenSource: AnalyticsSource?
+
+    func takeOpenSource() -> AnalyticsSource? {
+        defer { pendingOpenSource = nil }
+        return pendingOpenSource
+    }
+
     private var container: ModelContainer?
     private var bannerDismissTask: Task<Void, Never>?
     /// Files that arrived before `configure(container:)`; replayed once the
@@ -79,7 +86,7 @@ final class IncomingFileRouter {
         if !deferredURLs.isEmpty {
             let urls = deferredURLs
             deferredURLs = []
-            handle(urls: urls)
+            handle(urls: urls, source: .openIn)
         }
     }
 
@@ -92,7 +99,7 @@ final class IncomingFileRouter {
             return
         }
         guard url.isFileURL else { return }
-        handle(urls: [url])
+        handle(urls: [url], source: .openIn)
     }
 
     /// Handles one or more file URLs (Open-in, drop). Images arriving
@@ -101,7 +108,7 @@ final class IncomingFileRouter {
     ///   Required for drag-and-drop, whose temporary URLs may be reclaimed
     ///   as soon as the drop handler returns.
     /// - Parameter folder: Library folder new documents should land in.
-    func handle(urls: [URL], stageSynchronously: Bool = false, folder: Folder? = nil) {
+    func handle(urls: [URL], stageSynchronously: Bool = false, folder: Folder? = nil, source: AnalyticsSource = .openIn) {
         guard let container else {
             deferredURLs.append(contentsOf: urls)
             return
@@ -112,10 +119,11 @@ final class IncomingFileRouter {
         if stageSynchronously {
             let staged = fileURLs.compactMap { try? Self.stage($0) }
             guard !staged.isEmpty else {
+                AppAnalytics.log(.importFailed, [.source: source.rawValue, .count: fileURLs.count, .errorType: "unreadable"])
                 show(.error("Couldn't read the dropped files."))
                 return
             }
-            Task { await importStaged(staged, container: container, folder: folder) }
+            Task { await importStaged(staged, container: container, folder: folder, source: source) }
         } else {
             Task {
                 var staged: [StagedFile] = []
@@ -128,12 +136,13 @@ final class IncomingFileRouter {
                     }
                 }
                 if staged.isEmpty {
+                    AppAnalytics.log(.importFailed, [.source: source.rawValue, .count: fileURLs.count, .errorType: "unreadable"])
                     show(.error(failures == 1
                         ? "Couldn't read that file. It may not have finished downloading."
                         : "Couldn't read those files."))
                     return
                 }
-                await importStaged(staged, container: container, folder: folder)
+                await importStaged(staged, container: container, folder: folder, source: source)
             }
         }
     }
@@ -184,6 +193,7 @@ final class IncomingFileRouter {
         dismissBanner()
         libraryRequestToken &+= 1
         if let id = banner.documentID {
+            pendingOpenSource = .banner
             documentToOpen = id
         }
     }
@@ -271,7 +281,7 @@ final class IncomingFileRouter {
 
     // MARK: - Import
 
-    private func importStaged(_ files: [StagedFile], container: ModelContainer, folder: Folder?) async {
+    private func importStaged(_ files: [StagedFile], container: ModelContainer, folder: Folder?, source: AnalyticsSource) async {
         inFlightCount += files.count
         defer { inFlightCount = max(0, inFlightCount - files.count) }
 
@@ -327,6 +337,14 @@ final class IncomingFileRouter {
             for doc in imported { doc.folder = folder }
         }
         try? context.save()
+        logImport(
+            source: source,
+            pdfCount: files.filter { $0.kind == .pdf }.count,
+            imageCount: images.count,
+            imported: imported.count,
+            duplicate: reopened != nil,
+            failed: errors.count
+        )
         report(imported: imported, reopened: reopened, errors: errors, source: nil)
     }
 
@@ -339,6 +357,8 @@ final class IncomingFileRouter {
         var reopened: Document?
         var errors: [String] = []
         var sourceApp: String?
+        var pdfCount = 0
+        var imageCount = 0
 
         for (manifest, batchURL) in batches {
             inFlightCount += manifest.items.count
@@ -346,6 +366,8 @@ final class IncomingFileRouter {
             sourceApp = manifest.sourceAppName ?? sourceApp
 
             var pendingImages: [(URL, String)] = []
+            pdfCount += manifest.items.filter { $0.kind == .pdf }.count
+            imageCount += manifest.items.filter { $0.kind == .image }.count
             for item in manifest.items {
                 let itemURL = batchURL.appending(path: item.storedName)
                 guard FileManager.default.fileExists(atPath: itemURL.path) else { continue }
@@ -408,6 +430,14 @@ final class IncomingFileRouter {
         }
 
         try? context.save()
+        logImport(
+            source: sourceApp == "Shortcuts" ? .shortcut : .shareExtension,
+            pdfCount: pdfCount,
+            imageCount: imageCount,
+            imported: imported.count,
+            duplicate: reopened != nil,
+            failed: errors.count
+        )
         report(imported: imported, reopened: reopened, errors: errors, source: sourceApp)
     }
 
@@ -420,6 +450,40 @@ final class IncomingFileRouter {
     }
 
     // MARK: - Reporting
+
+    private func logImport(source: AnalyticsSource, pdfCount: Int, imageCount: Int, imported: Int, duplicate: Bool, failed: Int) {
+        let kind = pdfCount > 0 && imageCount > 0 ? "mixed" : (imageCount > 0 ? "image" : "pdf")
+        if imported == 0 && !duplicate {
+            AppAnalytics.log(.importFailed, [
+                .source: source.rawValue,
+                .kind: kind,
+                .count: pdfCount + imageCount,
+                .errorType: "invalid_or_unreadable",
+            ])
+            return
+        }
+        AppAnalytics.log(.documentImported, [
+            .source: source.rawValue,
+            .kind: kind,
+            .fileCount: pdfCount + imageCount,
+            .count: imported,
+            .duplicate: duplicate,
+            .failedCount: failed,
+        ])
+        guard imported > 0 else { return }
+        let feature: AnalyticsFeature
+        switch source {
+        case .dragDrop: feature = .dragDrop
+        case .shareExtension: feature = .shareExtension
+        case .shortcut: feature = .shortcutImport
+        case .openIn: feature = .openIn
+        default: feature = .importFiles
+        }
+        AppAnalytics.feature(feature, source: source.rawValue, [.kind: kind, .count: imported])
+        if let container {
+            AnalyticsUserProperties.refreshLibrary(in: container.mainContext)
+        }
+    }
 
     private func report(imported: [Document], reopened: Document?, errors: [String], source: String?) {
         if imported.isEmpty, let reopened {
@@ -480,6 +544,12 @@ final class IncomingFileRouter {
     func handleAppScheme(_ url: URL) {
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let query = components?.queryItems?.first(where: { $0.name == "q" })?.value ?? ""
+        let entrySource = components?.queryItems?.first(where: { $0.name == "src" })?.value
+            .flatMap(AnalyticsSource.init(rawValue:)) ?? .deepLink
+        let host = url.host()?.lowercased() ?? "none"
+        if host != "inbox" {
+            AppAnalytics.log(.appEntry, [.action: host, .source: entrySource.rawValue])
+        }
         switch url.host()?.lowercased() {
         case "inbox":
             sweepSharedInbox()
@@ -506,6 +576,7 @@ final class IncomingFileRouter {
                    let page = Int(pageText) {
                     pageToOpen = max(0, page - 1)
                 }
+                pendingOpenSource = entrySource
                 documentToOpen = id
                 libraryRequestToken &+= 1
             }

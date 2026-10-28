@@ -37,7 +37,7 @@ struct FlattenPDFView: View {
                     ToolbarItem(placement: .topBarLeading) { Button("Cancel") { dismiss() }.disabled(isWorking) }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Flatten") { apply() }
-                            .buttonStyle(.glassProminent)
+                            .compatGlassButtonStyle(prominent: true)
                             .disabled(selectedDoc == nil || isWorking)
                     }
                 }
@@ -49,7 +49,7 @@ struct FlattenPDFView: View {
                         Text("Flattening…").font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert("Couldn't flatten", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -58,24 +58,28 @@ struct FlattenPDFView: View {
                 Text(error ?? "")
             }
         }
+        .trackScreen(.toolFlatten)
     }
 
     private func apply() {
         guard let doc = selectedDoc else { return }
         isWorking = true
         let replace = replaceOriginal
+        let started = Date()
         Task {
             defer { isWorking = false }
             await DocumentStorage.ensureDownloaded(at: doc.fileURL)
             do {
                 let result = try PDFOperations.flatten(doc, replaceOriginal: replace, in: modelContext)
                 try? modelContext.save()
+                AppAnalytics.toolCompleted(.flatten, startedAt: started, pageCount: result.pageCount, [.value: replace ? "replace" : "copy"])
                 success = ToolSuccessResult(
                     title: "PDF Flattened",
                     summary: "Annotations and form fields are now part of the page content.",
                     documents: [result]
                 )
             } catch {
+                AppAnalytics.toolFailed(.flatten, error: error)
                 self.error = error.localizedDescription
             }
         }

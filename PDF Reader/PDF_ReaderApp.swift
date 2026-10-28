@@ -10,6 +10,7 @@ struct PDFAIApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        AppAnalytics.configure()
         // Configure RevenueCat first so the EntitlementStore singleton can
         // query Purchases.shared right after launch. API key is injected
         // into Info.plist via the active xcconfig (Config_Staging / Config_Prod).
@@ -68,12 +69,15 @@ struct PDFAIApp: App {
                     .task {
                         IncomingFileRouter.shared.configure(container: modelContainer)
                         IncomingFileRouter.shared.sweepSharedInbox()
+                        AnalyticsUserProperties.refreshEnvironment()
+                        AnalyticsUserProperties.refreshLibrary(in: modelContainer.mainContext)
                     }
                     .onChange(of: scenePhase) { _, phase in
                         // Share Extension batches land while we're in the
                         // background; pick them up as soon as we're visible.
                         if phase == .active {
                             IncomingFileRouter.shared.sweepSharedInbox()
+                            AnalyticsUserProperties.refreshEnvironment()
                         }
                     }
             } else {

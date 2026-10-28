@@ -43,9 +43,11 @@ final class EntitlementStore {
         if isPro { return true }
         if FreeTier.consume(feature) {
             usageVersion &+= 1
+            logFreeUse(feature)
             return true
         }
         FreeTier.lastBlocked = feature
+        AppAnalytics.log(.freeLimitReached, [.proFeature: feature.rawValue])
         return false
     }
 
@@ -56,6 +58,7 @@ final class EntitlementStore {
         if isPro { return true }
         if FreeTier.remaining(feature) > 0 { return true }
         FreeTier.lastBlocked = feature
+        AppAnalytics.log(.freeLimitReached, [.proFeature: feature.rawValue])
         return false
     }
 
@@ -65,6 +68,14 @@ final class EntitlementStore {
         guard !isPro else { return }
         FreeTier.consume(feature)
         usageVersion &+= 1
+        logFreeUse(feature)
+    }
+
+    private func logFreeUse(_ feature: ProFeature) {
+        AppAnalytics.log(.freeUseConsumed, [
+            .proFeature: feature.rawValue,
+            .remaining: FreeTier.remaining(feature),
+        ])
     }
 
     /// Pulls the latest CustomerInfo from RevenueCat and updates state.
@@ -83,6 +94,7 @@ final class EntitlementStore {
         isPro = proEntitlement?.isActive == true
         activeProductID = proEntitlement?.productIdentifier
         UserDefaults.standard.set(isPro, forKey: Self.cachedProKey)
+        AnalyticsUserProperties.refreshEntitlement()
     }
 }
 

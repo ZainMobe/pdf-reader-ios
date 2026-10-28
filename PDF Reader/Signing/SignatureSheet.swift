@@ -72,7 +72,7 @@ struct SignatureSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if showingCreation {
                         Button("Save & Place") { saveAndPlace() }
-                            .buttonStyle(.glassProminent)
+                            .compatGlassButtonStyle(prominent: true)
                             .disabled(!canCommit)
                     } else {
                         Button {
@@ -84,6 +84,7 @@ struct SignatureSheet: View {
                 }
             }
         }
+        .trackScreen(.signaturePicker)
     }
 
     private var navigationTitle: String {
@@ -255,7 +256,7 @@ struct SignatureSheet: View {
             ) {
                 Label(pickedImage == nil ? "Choose Photo" : "Replace Photo", systemImage: "photo.badge.plus")
             }
-            .buttonStyle(.glass)
+            .compatGlassButtonStyle()
             .onChange(of: pickedItem) { _, newItem in
                 Task { await loadPickedImage(newItem) }
             }
@@ -282,12 +283,15 @@ struct SignatureSheet: View {
             imageData: image.pngData() ?? Data()
         )
         modelContext.insert(asset)
+        AppAnalytics.log(.signatureCreated, [.option: creationMode.rawValue])
+        AppAnalytics.setUserProperty(.hasSignature, "true")
         onSelect(image)
         dismiss()
     }
 
     private func place(_ asset: SignatureAsset) {
         guard let image = UIImage(data: asset.imageData) else { return }
+        AppAnalytics.log(.signatureCreated, [.option: "reuse_saved"])
         onSelect(image)
         dismiss()
     }

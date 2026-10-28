@@ -65,6 +65,7 @@ struct TranslateSheet: View {
                 Text("The translated PDF hasn't been saved to your Library.")
             }
         }
+        .trackScreen(.aiTranslate)
     }
 
     @ToolbarContentBuilder
@@ -72,7 +73,7 @@ struct TranslateSheet: View {
         ToolbarItem(placement: .topBarLeading) {
             HStack(spacing: DesignSystem.Spacing.xs) {
                 Image(systemName: "sparkles")
-                Text("On-device")
+                Text(AIEngine.availability().backend?.displayName ?? "On-device")
             }
             .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
@@ -132,7 +133,7 @@ struct TranslateSheet: View {
                 }
                 .padding(.horizontal, DesignSystem.Spacing.m)
                 .padding(.vertical, 6)
-                .glassEffect(.regular.interactive(), in: .capsule)
+                .compatGlass(.capsule, interactive: true)
             }
             Spacer()
         }
@@ -244,7 +245,7 @@ struct TranslateSheet: View {
         }
         .padding(DesignSystem.Spacing.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+        .compatGlass(.rect(DesignSystem.Radius.medium))
     }
 
     private func readyView(url: URL, pageCount: Int) -> some View {
@@ -271,7 +272,7 @@ struct TranslateSheet: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.m)
         .padding(.vertical, DesignSystem.Spacing.s)
-        .glassEffect(.regular, in: .capsule)
+        .compatGlass(.capsule)
     }
 
     private var saveBar: some View {
@@ -286,7 +287,7 @@ struct TranslateSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glass)
+            .compatGlassButtonStyle()
 
             Button {
                 save()
@@ -296,7 +297,7 @@ struct TranslateSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
         }
         .padding(DesignSystem.Spacing.l)
     }
@@ -312,7 +313,7 @@ struct TranslateSheet: View {
                 Haptics.impact(.light)
                 translator.translate(document, to: selectedLanguage)
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
             Spacer()
         }
     }
@@ -344,7 +345,7 @@ struct TranslateSheet: View {
                     .frame(maxWidth: 240)
                     .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
             Spacer()
         }
         .padding(.top, DesignSystem.Spacing.xxl)

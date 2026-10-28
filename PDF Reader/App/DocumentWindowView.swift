@@ -13,7 +13,7 @@ struct DocumentWindowView: View {
     var body: some View {
         if let document = resolveDocument() {
             NavigationStack {
-                ReaderView(document: document)
+                ReaderView(document: document, openSource: .newWindow)
             }
         } else {
             ContentUnavailableView(

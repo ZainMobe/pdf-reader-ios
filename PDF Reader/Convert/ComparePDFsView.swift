@@ -42,7 +42,7 @@ struct ComparePDFsView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if result == nil {
                         Button("Compare") { compare() }
-                            .buttonStyle(.glassProminent)
+                            .compatGlassButtonStyle(prominent: true)
                             .disabled(docA == nil || docB == nil || docA?.id == docB?.id || isWorking)
                     } else {
                         Button("Done") { dismiss() }
@@ -56,7 +56,7 @@ struct ComparePDFsView: View {
                         Text("Comparing…").font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert("Couldn't compare", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -65,12 +65,14 @@ struct ComparePDFsView: View {
                 Text(error ?? "")
             }
         }
+        .trackScreen(.toolCompare)
     }
 
     private func compare() {
         guard let a = docA, let b = docB else { return }
         let urlA = a.fileURL, urlB = b.fileURL
         isWorking = true
+        let started = Date()
         Task {
             defer { isWorking = false }
             await DocumentStorage.ensureDownloaded(at: urlA)
@@ -80,8 +82,10 @@ struct ComparePDFsView: View {
                     try PDFCompare.compare(urlA, urlB)
                 }.value
                 EntitlementStore.shared.recordUse(.tool)
+                AppAnalytics.toolCompleted(.compare, startedAt: started, pageCount: max(a.pageCount, b.pageCount), fileCount: 2)
                 Haptics.success()
             } catch {
+                AppAnalytics.toolFailed(.compare, error: error)
                 self.error = error.localizedDescription
             }
         }
@@ -140,6 +144,7 @@ private struct CompareResultsView: View {
         .onAppear {
             if let first = result.changedPages.first { pageIndex = first }
         }
+        .trackScreen(.toolCompareResults)
     }
 
     // MARK: - Bars

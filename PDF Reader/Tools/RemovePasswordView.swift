@@ -45,6 +45,7 @@ struct RemovePasswordView: View {
             }
             .task { await scanForProtectedDocuments() }
         }
+        .trackScreen(.toolRemovePassword)
     }
 
     private var formContent: some View {
@@ -109,7 +110,7 @@ struct RemovePasswordView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Remove") { apply() }
-                    .buttonStyle(.glassProminent)
+                    .compatGlassButtonStyle(prominent: true)
                     .disabled(selectedDoc == nil || password.isEmpty || isWorking)
             }
         }
@@ -121,7 +122,7 @@ struct RemovePasswordView: View {
                         .font(.subheadline)
                 }
                 .padding(DesignSystem.Spacing.xl)
-                .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                .compatGlass(.rect(DesignSystem.Radius.medium))
             }
         }
         .alert(
@@ -164,6 +165,7 @@ struct RemovePasswordView: View {
     private func apply() {
         guard let doc = selectedDoc, !password.isEmpty else { return }
         isWorking = true
+        let started = Date()
         // Defer one frame so the progress overlay renders before the
         // synchronous rewrite starts.
         DispatchQueue.main.async {
@@ -174,12 +176,14 @@ struct RemovePasswordView: View {
                 isWorking = false
                 protectedIDs.remove(doc.id)
                 password = ""
+                AppAnalytics.toolCompleted(.removePassword, startedAt: started, pageCount: unlocked.pageCount)
                 success = ToolSuccessResult(
                     title: "Password Removed",
                     summary: "\(unlocked.title) opens without a password. The original is unchanged.",
                     documents: [unlocked]
                 )
             } catch {
+                AppAnalytics.toolFailed(.removePassword, error: error)
                 self.error = error.localizedDescription
                 isWorking = false
             }

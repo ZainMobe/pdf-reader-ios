@@ -87,6 +87,7 @@ struct ChatSheet: View {
                 }
             }
         }
+        .trackScreen(.aiChat)
     }
 
     @ToolbarContentBuilder
@@ -123,7 +124,7 @@ struct ChatSheet: View {
         HStack(spacing: 4) {
             Image(systemName: "sparkles")
                 .imageScale(.small)
-            Text("On-device")
+            Text(AIEngine.availability().backend?.displayName ?? "On-device")
         }
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
@@ -209,7 +210,7 @@ struct ChatSheet: View {
         }
         .padding(.horizontal, DesignSystem.Spacing.m)
         .padding(.vertical, 6)
-        .glassEffect(.regular, in: .capsule)
+        .compatGlass(.capsule)
         .frame(maxWidth: .infinity)
     }
 
@@ -275,7 +276,7 @@ struct ChatSheet: View {
                 ForEach(Self.suggestedPrompts) { prompt in
                     Button {
                         Haptics.impact(.light)
-                        chat?.send(prompt.prompt)
+                        chat?.send(prompt.prompt, suggested: true)
                     } label: {
                         SuggestedPromptCard(prompt: prompt)
                     }
@@ -306,7 +307,7 @@ struct ChatSheet: View {
             .disabled(!composerEnabled)
             .padding(.horizontal, DesignSystem.Spacing.m)
             .padding(.vertical, 10)
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 22))
+            .compatGlass(.rect(22), interactive: true)
     }
 
     private var sendButton: some View {
@@ -410,7 +411,7 @@ private struct SuggestedPromptCard: View {
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
         .padding(DesignSystem.Spacing.m)
         .contentShape(Rectangle())
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: DesignSystem.Radius.medium))
+        .compatGlass(.rect(DesignSystem.Radius.medium), interactive: true)
     }
 }
 
@@ -450,10 +451,7 @@ private struct ChatBubble: View {
             .textSelection(.enabled)
             .padding(.horizontal, DesignSystem.Spacing.m)
             .padding(.vertical, DesignSystem.Spacing.s + 2)
-            .glassEffect(
-                Glass.regular.tint(.accentColor),
-                in: .rect(cornerRadius: DesignSystem.Radius.medium)
-            )
+            .compatGlass(.rect(DesignSystem.Radius.medium), tint: .accentColor)
     }
 
     private var assistantContent: some View {
@@ -472,7 +470,7 @@ private struct ChatBubble: View {
             TypingIndicator()
                 .padding(.horizontal, DesignSystem.Spacing.m)
                 .padding(.vertical, DesignSystem.Spacing.s + 2)
-                .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                .compatGlass(.rect(DesignSystem.Radius.medium))
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(renderedMarkdown)
@@ -483,13 +481,14 @@ private struct ChatBubble: View {
             }
             .padding(.horizontal, DesignSystem.Spacing.m)
             .padding(.vertical, DesignSystem.Spacing.s + 2)
-            .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+            .compatGlass(.rect(DesignSystem.Radius.medium))
         }
     }
 
     private var copyButton: some View {
         Button {
             UIPasteboard.general.string = message.text
+            AppAnalytics.log(.aiResultAction, [.aiAction: AnalyticsAIAction.chat.rawValue, .action: "copy"])
             Haptics.selection()
             withAnimation(DesignSystem.Motion.snappy) { didCopy = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

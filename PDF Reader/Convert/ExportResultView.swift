@@ -109,6 +109,7 @@ struct ExportResultView: View {
                 contentOpacity = 1.0
             }
         }
+        .trackScreen(.exportResult)
     }
 
     // MARK: - Pieces
@@ -162,7 +163,7 @@ struct ExportResultView: View {
                     .font(.caption.weight(.semibold))
                     .padding(.horizontal, DesignSystem.Spacing.m)
                     .padding(.vertical, 6)
-                    .glassEffect(.regular, in: .capsule)
+                    .compatGlass(.capsule)
                     .padding(DesignSystem.Spacing.m)
                 }
 
@@ -225,6 +226,7 @@ struct ExportResultView: View {
         VStack(spacing: DesignSystem.Spacing.s) {
             Button {
                 Haptics.impact(.light)
+                AppAnalytics.log(.exportShared, [.destination: "share_sheet", .fileCount: result.files.count])
                 showingShare = true
             } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
@@ -232,11 +234,12 @@ struct ExportResultView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, DesignSystem.Spacing.m)
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
 
             HStack(spacing: DesignSystem.Spacing.s) {
                 Button {
                     Haptics.impact(.light)
+                    AppAnalytics.log(.exportShared, [.destination: "files", .fileCount: result.files.count])
                     showingFilesExport = true
                 } label: {
                     Label("Save to Files", systemImage: "folder")
@@ -244,11 +247,12 @@ struct ExportResultView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, DesignSystem.Spacing.s)
                 }
-                .buttonStyle(.glass)
+                .compatGlassButtonStyle()
 
                 if let secondaryAction {
                     Button {
                         Haptics.impact(.light)
+                        AppAnalytics.log(.exportShared, [.destination: "photos", .fileCount: result.files.count])
                         secondaryAction.action()
                     } label: {
                         Label(secondaryAction.title, systemImage: secondaryAction.systemImage)
@@ -256,13 +260,14 @@ struct ExportResultView: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, DesignSystem.Spacing.s)
                     }
-                    .buttonStyle(.glass)
+                    .compatGlassButtonStyle()
                 }
             }
 
             if let onExportAnother {
                 Button("Export Another") {
                     Haptics.selection()
+                    AppAnalytics.log(.exportShared, [.destination: "export_another"])
                     onExportAnother()
                 }
                 .font(.subheadline)

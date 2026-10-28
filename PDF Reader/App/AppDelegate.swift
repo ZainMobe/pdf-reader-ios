@@ -26,10 +26,10 @@ final class SceneDelegate: NSObject, UIWindowSceneDelegate {
 
         var url: URL {
             switch self {
-            case .scan: URL(string: "pdfeditor://scan")!
-            case .importFiles: URL(string: "pdfeditor://import")!
-            case .ask: URL(string: "pdfeditor://ask")!
-            case .tools: URL(string: "pdfeditor://tools")!
+            case .scan: URL(string: "pdfeditor://scan?src=quick_action")!
+            case .importFiles: URL(string: "pdfeditor://import?src=quick_action")!
+            case .ask: URL(string: "pdfeditor://ask?src=quick_action")!
+            case .tools: URL(string: "pdfeditor://tools?src=quick_action")!
             }
         }
     }

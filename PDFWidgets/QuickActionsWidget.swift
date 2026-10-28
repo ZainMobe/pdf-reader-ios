@@ -41,10 +41,10 @@ struct QuickActionsView: View {
     }
 
     private let actions: [Action] = [
-        Action(id: "scan", title: "Scan", symbol: "doc.viewfinder", url: URL(string: "pdfeditor://scan")!),
-        Action(id: "import", title: "Import", symbol: "square.and.arrow.down", url: URL(string: "pdfeditor://import")!),
-        Action(id: "ask", title: "Ask", symbol: "sparkle.magnifyingglass", url: URL(string: "pdfeditor://ask")!),
-        Action(id: "tools", title: "Tools", symbol: "wrench.and.screwdriver", url: URL(string: "pdfeditor://tools")!),
+        Action(id: "scan", title: "Scan", symbol: "doc.viewfinder", url: URL(string: "pdfeditor://scan?src=widget")!),
+        Action(id: "import", title: "Import", symbol: "square.and.arrow.down", url: URL(string: "pdfeditor://import?src=widget")!),
+        Action(id: "ask", title: "Ask", symbol: "sparkle.magnifyingglass", url: URL(string: "pdfeditor://ask?src=widget")!),
+        Action(id: "tools", title: "Tools", symbol: "wrench.and.screwdriver", url: URL(string: "pdfeditor://tools?src=widget")!),
     ]
 
     var body: some View {
@@ -61,7 +61,7 @@ struct QuickActionsView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .widgetURL(URL(string: "pdfeditor://scan"))
+            .widgetURL(URL(string: "pdfeditor://scan?src=widget"))
         } else {
             grid
         }
@@ -96,7 +96,7 @@ struct ScanLockScreenWidget: Widget {
         StaticConfiguration(kind: kind, provider: StaticProvider()) { _ in
             ScanAccessoryView()
                 .containerBackground(.background, for: .widget)
-                .widgetURL(URL(string: "pdfeditor://scan"))
+                .widgetURL(URL(string: "pdfeditor://scan?src=widget"))
         }
         .configurationDisplayName("Scan")
         .description("Open the scanner from your Lock Screen.")

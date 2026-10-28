@@ -35,6 +35,8 @@ struct LibraryHomeView: View {
     @State private var showingAskLibrary = false
     @State private var isDropTargeted = false
     @State private var deletingDoc: Document?
+    @State private var paywallSource: AnalyticsSource = .library
+    @State private var scanSource: AnalyticsSource = .library
 
     private let entitlements = EntitlementStore.shared
     private let incomingRouter = IncomingFileRouter.shared
@@ -56,6 +58,7 @@ struct LibraryHomeView: View {
             VStack(spacing: 0) {
                 if !entitlements.isPro {
                     UpgradeBanner {
+                        paywallSource = .upgradeBanner
                         showingPaywall = true
                     }
                     .padding(.horizontal, DesignSystem.Spacing.l)
@@ -66,7 +69,7 @@ struct LibraryHomeView: View {
             }
             // iPad / Mac: drop PDFs and images from Files, Photos, Mail.
             .dropDestination(for: URL.self) { urls, _ in
-                incomingRouter.handle(urls: urls, stageSynchronously: true, folder: selectedFolder)
+                incomingRouter.handle(urls: urls, stageSynchronously: true, folder: selectedFolder, source: .dragDrop)
                 return true
             } isTargeted: { targeted in
                 withAnimation(.snappy) { isDropTargeted = targeted }
@@ -80,7 +83,7 @@ struct LibraryHomeView: View {
                             Label("Drop to add to Library", systemImage: "arrow.down.doc")
                                 .font(.headline)
                                 .padding()
-                                .glassEffect(.regular, in: .capsule)
+                                .compatGlass(.capsule)
                         }
                         .padding(DesignSystem.Spacing.m)
                         .allowsHitTesting(false)
@@ -97,6 +100,19 @@ struct LibraryHomeView: View {
             }
             .navigationTitle(navTitle)
             .searchable(text: $searchText, prompt: "Search title or contents")
+            .task(id: searchText) {
+                let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !query.isEmpty else { return }
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                AppAnalytics.log(.librarySearch, [
+                    .queryLength: AppAnalytics.countBucket(query.count),
+                    .count: filteredDocuments.count,
+                    .hasResults: !filteredDocuments.isEmpty,
+                ])
+                AppAnalytics.feature(.librarySearch, source: AnalyticsSource.library.rawValue)
+            }
+            .trackScreen(.library)
             .task {
                 await DocumentStorage.bootstrapStorage()
                 syncMonitor.start()
@@ -128,6 +144,8 @@ struct LibraryHomeView: View {
                     if let doc = deletingDoc {
                         DocumentStorage.delete(doc, in: modelContext)
                         try? modelContext.save()
+                        AppAnalytics.libraryAction(.deleteDocument)
+                        AnalyticsUserProperties.refreshLibrary(in: modelContext)
                     }
                     deletingDoc = nil
                 }
@@ -146,6 +164,8 @@ struct LibraryHomeView: View {
                         libraryViewModeRaw = viewMode == .grid
                             ? LibraryViewMode.list.rawValue
                             : LibraryViewMode.grid.rawValue
+                        AppAnalytics.libraryAction(.libraryViewMode, [.value: libraryViewModeRaw])
+                        AppAnalytics.setUserProperty(.libraryViewMode, libraryViewModeRaw)
                     } label: {
                         Label(
                             viewMode == .grid ? "List View" : "Grid View",
@@ -173,7 +193,7 @@ struct LibraryHomeView: View {
                 FolderManagerView()
             }
             .sheet(isPresented: $showingPaywall) {
-                PaywallView()
+                PaywallView(source: paywallSource)
             }
             .fullScreenCover(isPresented: $showingAskLibrary) {
                 LibrarySearchView(initialQuery: searchText)
@@ -188,7 +208,7 @@ struct LibraryHomeView: View {
                         }
                         .padding(.horizontal, DesignSystem.Spacing.l)
                         .padding(.vertical, DesignSystem.Spacing.m)
-                        .glassEffect(.regular, in: .capsule)
+                        .compatGlass(.capsule)
                     }
                     if isProcessingScan {
                         HStack(spacing: DesignSystem.Spacing.s) {
@@ -198,7 +218,7 @@ struct LibraryHomeView: View {
                         }
                         .padding(.horizontal, DesignSystem.Spacing.l)
                         .padding(.vertical, DesignSystem.Spacing.m)
-                        .glassEffect(.regular, in: .capsule)
+                        .compatGlass(.capsule)
                     }
                 }
                 .padding(.bottom, DesignSystem.Spacing.xl)
@@ -227,6 +247,7 @@ struct LibraryHomeView: View {
                     let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
                     if let doc = renamingDoc, !trimmed.isEmpty {
                         doc.title = trimmed
+                        AppAnalytics.libraryAction(.rename)
                     }
                     renamingDoc = nil
                 }
@@ -257,6 +278,7 @@ struct LibraryHomeView: View {
                             modelContext.insert(tag)
                             doc.tags = (doc.tags ?? []) + [tag]
                         }
+                        AppAnalytics.libraryAction(.tags, [.option: "create"])
                     }
                     newTagDocument = nil
                     newTagName = ""
@@ -325,6 +347,7 @@ struct LibraryHomeView: View {
         Menu {
             Button {
                 selectedFolder = nil
+                AppAnalytics.libraryAction(.folders, [.option: "show_all"])
             } label: {
                 Label("All Documents", systemImage: "tray.full")
             }
@@ -333,6 +356,7 @@ struct LibraryHomeView: View {
                 ForEach(folders) { folder in
                     Button {
                         selectedFolder = folder
+                        AppAnalytics.libraryAction(.folders, [.option: "open"])
                     } label: {
                         HStack {
                             Image(systemName: "folder")
@@ -346,6 +370,7 @@ struct LibraryHomeView: View {
             }
             Divider()
             Button {
+                AppAnalytics.libraryAction(.folders, [.option: "manage"])
                 showingFolderManager = true
             } label: {
                 Label("Manage Folders…", systemImage: "folder.badge.gearshape")
@@ -362,12 +387,14 @@ struct LibraryHomeView: View {
     private var addMenu: some View {
         Menu {
             Button {
+                scanSource = .libraryMenu
                 showingImporter = true
             } label: {
                 Label("Import Files", systemImage: "square.and.arrow.down")
             }
             if VNDocumentCameraViewController.isSupported {
                 Button {
+                    scanSource = .libraryMenu
                     showingScanner = true
                 } label: {
                     Label("Scan Document", systemImage: "doc.viewfinder")
@@ -386,6 +413,10 @@ struct LibraryHomeView: View {
                 ForEach(SmartFilter.allCases) { filter in
                     Button {
                         activeFilter = filter
+                        AppAnalytics.log(.libraryFilter, [.filter: filter.rawValue])
+                        if filter != .all {
+                            AppAnalytics.feature(.libraryFilter, source: AnalyticsSource.library.rawValue, [.filter: filter.rawValue])
+                        }
                     } label: {
                         GlassChip(
                             title: filter.title,
@@ -419,11 +450,16 @@ struct LibraryHomeView: View {
                     Text("No titles or contents match. Ask AI to search inside every document instead.")
                 } actions: {
                     Button {
-                        if entitlements.unlock(.aiAction) { showingAskLibrary = true } else { showingPaywall = true }
+                        if entitlements.unlock(.aiAction) {
+                            showingAskLibrary = true
+                        } else {
+                            paywallSource = .search
+                            showingPaywall = true
+                        }
                     } label: {
                         Label("Ask your Library", systemImage: "sparkle.magnifyingglass")
                     }
-                    .buttonStyle(.glassProminent)
+                    .compatGlassButtonStyle(prominent: true)
                 }
             }
         } else {
@@ -448,7 +484,7 @@ struct LibraryHomeView: View {
                     selectedFolder = nil
                     activeFilter = .all
                 }
-                .buttonStyle(.glass)
+                .compatGlassButtonStyle()
             }
         } else {
             ContentUnavailableView {
@@ -457,7 +493,7 @@ struct LibraryHomeView: View {
                 Text(activeFilter.emptyDescription)
             } actions: {
                 Button("Show All") { activeFilter = .all }
-                    .buttonStyle(.glass)
+                    .compatGlassButtonStyle()
             }
         }
     }
@@ -469,11 +505,17 @@ struct LibraryHomeView: View {
             Text("Import a PDF or scan a document to get started.")
         } actions: {
             VStack(spacing: DesignSystem.Spacing.s) {
-                Button("Import Files") { showingImporter = true }
-                    .buttonStyle(.glassProminent)
+                Button("Import Files") {
+                    scanSource = .libraryEmptyState
+                    showingImporter = true
+                }
+                .compatGlassButtonStyle(prominent: true)
                 if VNDocumentCameraViewController.isSupported {
-                    Button("Scan Document") { showingScanner = true }
-                        .buttonStyle(.glass)
+                    Button("Scan Document") {
+                        scanSource = .libraryEmptyState
+                        showingScanner = true
+                    }
+                    .compatGlassButtonStyle()
                 }
             }
         }
@@ -514,6 +556,7 @@ struct LibraryHomeView: View {
     private func documentContextMenu(for doc: Document) -> some View {
         if horizontalSizeClass == .regular {
             Button {
+                AppAnalytics.libraryAction(.openNewWindow)
                 openWindow(value: doc.id)
             } label: {
                 Label("Open in New Window", systemImage: "macwindow.badge.plus")
@@ -522,6 +565,7 @@ struct LibraryHomeView: View {
         }
         Button {
             doc.isFavorite.toggle()
+            AppAnalytics.libraryAction(.favorite, [.value: doc.isFavorite ? "on" : "off"])
         } label: {
             Label(
                 doc.isFavorite ? "Remove from Favorites" : "Add to Favorites",
@@ -531,6 +575,7 @@ struct LibraryHomeView: View {
         Menu {
             Button {
                 doc.folder = nil
+                AppAnalytics.libraryAction(.moveToFolder, [.option: "none"])
             } label: {
                 HStack {
                     Text("(No folder)")
@@ -541,6 +586,7 @@ struct LibraryHomeView: View {
             ForEach(folders) { folder in
                 Button {
                     doc.folder = folder
+                    AppAnalytics.libraryAction(.moveToFolder, [.option: "folder"])
                 } label: {
                     HStack {
                         Text(folder.name)
@@ -585,6 +631,7 @@ struct LibraryHomeView: View {
         ShareLink(item: doc.fileURL) {
             Label("Share", systemImage: "square.and.arrow.up")
         }
+
         Divider()
         Button(role: .destructive) {
             // Deletion removes the file from iCloud on every device and
@@ -605,6 +652,7 @@ struct LibraryHomeView: View {
             tags.append(tag)
         }
         doc.tags = tags
+        AppAnalytics.libraryAction(.tags, [.option: "toggle"])
     }
 
     /// Pushes the document the router asked us to show, popping anything
@@ -620,8 +668,9 @@ struct LibraryHomeView: View {
         case .success(let urls):
             // Router validates, converts images, de-duplicates and files the
             // result into the folder currently being viewed.
-            incomingRouter.handle(urls: urls, folder: selectedFolder)
+            incomingRouter.handle(urls: urls, folder: selectedFolder, source: .filesPicker)
         case .failure(let error):
+            AppAnalytics.log(.importFailed, [.source: AnalyticsSource.filesPicker.rawValue, .errorType: AppAnalytics.errorLabel(error)])
             importError = error.localizedDescription
         }
     }
@@ -630,22 +679,27 @@ struct LibraryHomeView: View {
         switch result {
         case .success(let images) where !images.isEmpty:
             let targetFolder = selectedFolder
+            let source = scanSource
             Task {
                 isProcessingScan = true
                 defer { isProcessingScan = false }
+                let started = Date()
                 do {
                     let scanned = try await ScanToPDF.createDocument(from: images, in: modelContext)
                     if let folder = targetFolder {
                         scanned.folder = folder
                     }
+                    ScanAnalytics.completed(pages: images.count, source: source, startedAt: started, context: modelContext)
                     ReviewPrompt.requestIfNeeded(using: requestReview)
                 } catch {
+                    ScanAnalytics.failed(error, source: source)
                     importError = error.localizedDescription
                 }
             }
         case .success:
             break
         case .failure(let error):
+            ScanAnalytics.failed(error, source: scanSource)
             importError = error.localizedDescription
         }
     }

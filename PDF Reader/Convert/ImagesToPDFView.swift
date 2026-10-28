@@ -82,7 +82,7 @@ struct ImagesToPDFView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button(pages.count > 1 ? "Create (\(pages.count))" : "Create") { convert() }
-                            .buttonStyle(.glassProminent)
+                            .compatGlassButtonStyle(prominent: true)
                             .disabled(pages.isEmpty || isWorking || isLoadingPicks)
                     }
                 }
@@ -105,7 +105,7 @@ struct ImagesToPDFView: View {
                         Text(progressText).font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert("Couldn't create PDF", isPresented: Binding(
@@ -117,6 +117,7 @@ struct ImagesToPDFView: View {
             }
             .onDisappear { cleanupTemp() }
         }
+        .trackScreen(.toolImagesToPDF)
     }
 
     // MARK: - Empty state
@@ -143,7 +144,7 @@ struct ImagesToPDFView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, DesignSystem.Spacing.m)
                 }
-                .buttonStyle(.glassProminent)
+                .compatGlassButtonStyle(prominent: true)
                 Button {
                     showingFilesImporter = true
                 } label: {
@@ -152,7 +153,7 @@ struct ImagesToPDFView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, DesignSystem.Spacing.m)
                 }
-                .buttonStyle(.glass)
+                .compatGlassButtonStyle()
             }
             .padding(.horizontal, DesignSystem.Spacing.xl)
             Spacer()
@@ -425,6 +426,7 @@ struct ImagesToPDFView: View {
         let finalTitle = DocumentStorage.sanitizedTitle(title, fallback: "Images")
         isWorking = true
         progressText = "Preparing…"
+        let started = Date()
 
         Task {
             defer { isWorking = false }
@@ -458,6 +460,7 @@ struct ImagesToPDFView: View {
                 try? modelContext.save()
                 cleanupTemp()
                 pages = []
+                AppAnalytics.toolCompleted(.imagesToPDF, startedAt: started, pageCount: count, fileCount: snapshot.count, [.option: searchable ? "ocr" : "no_ocr"])
                 success = ToolSuccessResult(
                     title: "PDF Created",
                     summary: "\(count) \(count == 1 ? "image" : "images") combined into \(finalTitle)"
@@ -466,6 +469,7 @@ struct ImagesToPDFView: View {
                     meteredFeature: nil
                 )
             } catch {
+                AppAnalytics.toolFailed(.imagesToPDF, error: error)
                 self.error = error.localizedDescription
             }
         }

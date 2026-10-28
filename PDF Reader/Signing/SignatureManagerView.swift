@@ -22,7 +22,7 @@ struct SignatureManagerView: View {
                     Text("Save signatures here so you can sign documents quickly without redrawing each time.")
                 } actions: {
                     Button("Add Signature") { showingNewSheet = true }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                 }
             } else {
                 List {
@@ -37,6 +37,7 @@ struct SignatureManagerView: View {
                                 }
                                 Button(role: .destructive) {
                                     modelContext.delete(signature)
+                                    AppAnalytics.feature(.signatureManager, [.option: "delete"])
                                 } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
@@ -46,6 +47,7 @@ struct SignatureManagerView: View {
                         for index in offsets {
                             modelContext.delete(signatures[index])
                         }
+                        AppAnalytics.feature(.signatureManager, [.option: "delete"])
                     }
                 }
             }
@@ -84,6 +86,7 @@ struct SignatureManagerView: View {
                 renamingAsset = nil
             }
         }
+        .trackScreen(.signatureManager)
     }
 }
 

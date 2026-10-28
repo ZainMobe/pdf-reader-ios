@@ -76,7 +76,7 @@ struct RecentsView: View {
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .widgetURL(URL(string: "pdfeditor://scan"))
+            .widgetURL(URL(string: "pdfeditor://scan?src=widget"))
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -84,7 +84,7 @@ struct RecentsView: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Link(destination: URL(string: "pdfeditor://scan")!) {
+                    Link(destination: URL(string: "pdfeditor://scan?src=widget")!) {
                         Image(systemName: "doc.viewfinder")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.tint)

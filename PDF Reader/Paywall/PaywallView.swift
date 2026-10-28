@@ -6,7 +6,11 @@ import RevenueCat
 /// runs purchases through RevenueCat, and dismisses when the Pro
 /// entitlement becomes active.
 struct PaywallView: View {
+    var source: AnalyticsSource = .unknown
     @Environment(\.dismiss) private var dismiss
+    @State private var trigger = FreeTier.lastBlocked?.rawValue
+    @State private var openedAt = Date()
+    @State private var didPurchase = false
     @State private var selectedTier: SubscriptionTier = .yearly
     @State private var packages: [Package] = []
     @State private var eligibility: [String: IntroEligibilityStatus] = [:]
@@ -46,6 +50,22 @@ struct PaywallView: View {
                 }
             }
             .task { await loadOfferings() }
+            .trackScreen(.paywall)
+            .onAppear {
+                openedAt = Date()
+                AppAnalytics.log(.paywallViewed, [.source: source.rawValue, .trigger: trigger ?? "none"])
+            }
+            .onDisappear {
+                AppAnalytics.log(.paywallClosed, [
+                    .source: source.rawValue,
+                    .trigger: trigger ?? "none",
+                    .seconds: AppAnalytics.seconds(since: openedAt),
+                    .purchased: didPurchase,
+                ])
+            }
+            .onChange(of: selectedTier) { _, tier in
+                AppAnalytics.log(.paywallPlanSelected, [.plan: planName(tier)])
+            }
             .sensoryFeedback(.selection, trigger: selectedTier)
             .alert(
                 "Purchase failed",
@@ -184,7 +204,7 @@ struct PaywallView: View {
             .padding(DesignSystem.Spacing.l)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+            .compatGlass(.rect(DesignSystem.Radius.medium))
             .overlay(
                 RoundedRectangle(cornerRadius: DesignSystem.Radius.medium)
                     .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2)
@@ -208,7 +228,7 @@ struct PaywallView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, DesignSystem.Spacing.s)
             }
-            .buttonStyle(.glassProminent)
+            .compatGlassButtonStyle(prominent: true)
             .disabled(isPurchasing || packageFor(selectedTier) == nil)
             Text(ctaCaption)
                 .font(.caption2)
@@ -346,15 +366,32 @@ struct PaywallView: View {
         isPurchasing = true
         defer { isPurchasing = false }
         let startsTrial = trialDescription(for: selectedTier) != nil
+        let plan = planName(selectedTier)
+        let purchaseParams: [AnalyticsParam: Any?] = [
+            .plan: plan,
+            .hasTrial: startsTrial,
+            .source: source.rawValue,
+            .trigger: trigger ?? "none",
+        ]
+        AppAnalytics.log(.purchaseStarted, purchaseParams)
         do {
             let result = try await Purchases.shared.purchase(package: package)
-            if result.userCancelled { return }
+            if result.userCancelled {
+                AppAnalytics.log(.purchaseCancelled, purchaseParams)
+                return
+            }
             await EntitlementStore.shared.refresh()
             if EntitlementStore.shared.isPro {
+                var completed = purchaseParams
+                completed[.revenue] = startsTrial ? 0 : NSDecimalNumber(decimal: package.storeProduct.price).doubleValue
+                completed[.currency] = package.storeProduct.currencyCode
+                AppAnalytics.log(.purchaseCompleted, completed)
+                didPurchase = true
                 celebratesTrial = startsTrial
                 Haptics.success()
                 showingCelebration = true
             } else {
+                AppAnalytics.log(.purchaseFailed, purchaseParams.merging([.errorType: "entitlement_inactive"]) { $1 })
                 // Charged but the entitlement isn't active: almost always a
                 // product-to-entitlement mapping problem in the dashboard.
                 // Say so instead of silently leaving the paywall up.
@@ -362,9 +399,14 @@ struct PaywallView: View {
                 purchaseError = "Your purchase went through, but Pro isn't active yet. Try Restore Purchases in a moment, or contact support if it persists."
             }
         } catch {
+            AppAnalytics.log(.purchaseFailed, purchaseParams.merging([.errorType: AppAnalytics.errorLabel(error)]) { $1 })
             Haptics.error()
             purchaseError = error.localizedDescription
         }
+    }
+
+    private func planName(_ tier: SubscriptionTier) -> String {
+        AnalyticsUserProperties.planName(for: tier.id, isPro: true)
     }
 
     private func restore() async {
@@ -375,7 +417,9 @@ struct PaywallView: View {
         do {
             _ = try await Purchases.shared.restorePurchases()
             await EntitlementStore.shared.refresh()
+            AppAnalytics.log(.restoreCompleted, [.success: EntitlementStore.shared.isPro, .source: source.rawValue])
             if EntitlementStore.shared.isPro {
+                didPurchase = true
                 celebratesTrial = false
                 Haptics.success()
                 showingCelebration = true
@@ -383,6 +427,7 @@ struct PaywallView: View {
                 restoreMessage = "No previous purchases were found for this Apple Account."
             }
         } catch {
+            AppAnalytics.log(.restoreCompleted, [.success: false, .errorType: AppAnalytics.errorLabel(error)])
             Haptics.error()
             restoreMessage = error.localizedDescription
         }

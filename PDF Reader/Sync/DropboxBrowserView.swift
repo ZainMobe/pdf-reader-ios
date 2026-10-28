@@ -51,6 +51,7 @@ struct DropboxBrowserView: View {
                     Text(error ?? "")
                 }
         }
+        .trackScreen(.dropboxBrowser)
     }
 
     @ViewBuilder
@@ -124,7 +125,7 @@ struct DropboxBrowserView: View {
             .font(.subheadline.weight(.medium))
             .padding(.horizontal, DesignSystem.Spacing.l)
             .padding(.vertical, DesignSystem.Spacing.m)
-            .glassEffect(.regular.tint(Color.green.opacity(0.3)), in: .capsule)
+            .compatGlass(.capsule, tint: Color.green.opacity(0.3))
             .padding(.top, DesignSystem.Spacing.s)
             .transition(.move(edge: .top).combined(with: .opacity))
     }
@@ -161,6 +162,8 @@ struct DropboxBrowserView: View {
             let url = try await DropboxService.download(path: entry.path)
             try DocumentStorage.importPDF(from: url, into: modelContext)
             try? FileManager.default.removeItem(at: url)
+            AppAnalytics.log(.documentImported, [.source: AnalyticsSource.dropbox.rawValue, .kind: "pdf", .count: 1])
+            AppAnalytics.feature(.dropboxBrowse, source: AnalyticsSource.dropbox.rawValue)
             Haptics.success()
             withAnimation { importedCount += 1 }
             Task {
@@ -168,6 +171,7 @@ struct DropboxBrowserView: View {
                 withAnimation { importedCount = 0 }
             }
         } catch {
+            AppAnalytics.log(.importFailed, [.source: AnalyticsSource.dropbox.rawValue, .errorType: AppAnalytics.errorLabel(error)])
             Haptics.error()
             self.error = error.localizedDescription
         }

@@ -65,6 +65,7 @@ struct DocumentInfoSheet: View {
             }
             .task { loadAttributes() }
         }
+        .trackScreen(.documentInfo)
     }
 
     private var metadataRows: [(String, String)] {

@@ -64,9 +64,19 @@ struct ProfileEditorView: View {
         }
         .navigationTitle("Auto-Fill Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .trackScreen(.profileEditor)
+        .onDisappear {
+            let filled = [fullName, email, phone, addressLine1, city, country, company, jobTitle].filter { !$0.isEmpty }.count
+            AppAnalytics.log(.featureUsed, [
+                .feature: AnalyticsFeature.profile.rawValue,
+                .category: AnalyticsFeature.profile.category.rawValue,
+                .count: filled,
+            ])
+        }
     }
 
     private func clearAll() {
+        AppAnalytics.settingChanged("autofill_profile", "cleared")
         fullName = ""
         email = ""
         phone = ""

@@ -84,6 +84,7 @@ struct FolderManagerView: View {
                         // Documents keep their files; they just leave the folder.
                         for document in folder.documents ?? [] { document.folder = nil }
                         modelContext.delete(folder)
+                        AppAnalytics.libraryAction(.folders, [.option: "delete"])
                     }
                     deletingFolder = nil
                 }
@@ -115,12 +116,14 @@ struct FolderManagerView: View {
                     let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
                     if let folder = renamingFolder, !trimmed.isEmpty {
                         folder.name = trimmed
+                        AppAnalytics.libraryAction(.folders, [.option: "rename"])
                     }
                     renamingFolder = nil
                     renameText = ""
                 }
             }
         }
+        .trackScreen(.folderManager)
     }
 
     private var canCreate: Bool {
@@ -132,6 +135,7 @@ struct FolderManagerView: View {
         guard !trimmed.isEmpty else { return }
         let folder = Folder(name: trimmed)
         modelContext.insert(folder)
+        AppAnalytics.libraryAction(.folders, [.option: "create"])
         newName = ""
     }
 }

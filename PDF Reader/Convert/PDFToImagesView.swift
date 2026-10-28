@@ -64,7 +64,7 @@ struct PDFToImagesView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Export") { export() }
-                            .buttonStyle(.glassProminent)
+                            .compatGlassButtonStyle(prominent: true)
                             .disabled(selectedDoc == nil || isWorking || (!allPages && rangeText.isEmpty))
                     }
                 }
@@ -77,7 +77,7 @@ struct PDFToImagesView: View {
                         Text(progressText).font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert("Saved to Photos", isPresented: Binding(
@@ -98,6 +98,7 @@ struct PDFToImagesView: View {
                 if let outputDirectory { try? FileManager.default.removeItem(at: outputDirectory) }
             }
         }
+        .trackScreen(.toolPDFToImages)
     }
 
     private var formContent: some View {
@@ -179,6 +180,7 @@ struct PDFToImagesView: View {
         progress = 0
         progressText = "Preparing…"
 
+        let started = Date()
         Task {
             defer { isWorking = false }
             await DocumentStorage.ensureDownloaded(at: url)
@@ -247,6 +249,12 @@ struct PDFToImagesView: View {
             }
 
             // The result view records the free-tier use on appear.
+            AppAnalytics.toolCompleted(.pdfToImages, startedAt: started, pageCount: count, [
+                .format: fmt.fileExtension,
+                .option: "\(Int(dpi))dpi",
+                .destination: dest == .photos ? "photos" : "files",
+                .failedCount: total - written.count,
+            ])
             result = ExportResult(title: "Images Ready", summary: summary, files: written)
         }
     }

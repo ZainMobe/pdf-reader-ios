@@ -22,7 +22,7 @@ struct ExtractSheet: View {
                 ToolbarItem(placement: .topBarLeading) {
                     HStack(spacing: DesignSystem.Spacing.xs) {
                         Image(systemName: "sparkles")
-                        Text("On-device")
+                        Text(AIEngine.availability().backend?.displayName ?? "On-device")
                     }
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
@@ -56,6 +56,7 @@ struct ExtractSheet: View {
             .task { extractor.extract(document) }
             .onDisappear { extractor.cancel() }
         }
+        .trackScreen(.aiExtract)
     }
 
     @ViewBuilder
@@ -120,6 +121,7 @@ struct ExtractSheet: View {
 
     private func copyAll(_ data: ExtractedData) {
         UIPasteboard.general.string = formatted(data)
+        AppAnalytics.log(.aiResultAction, [.aiAction: AnalyticsAIAction.extract.rawValue, .action: "copy_all"])
         Haptics.success()
         withAnimation(DesignSystem.Motion.snappy) { copiedAll = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
@@ -188,11 +190,12 @@ private struct ExtractedSection: View {
         }
         .padding(DesignSystem.Spacing.l)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+        .compatGlass(.rect(DesignSystem.Radius.medium))
     }
 
     private func copy() {
         UIPasteboard.general.string = items.map { "• \($0)" }.joined(separator: "\n")
+        AppAnalytics.log(.aiResultAction, [.aiAction: AnalyticsAIAction.extract.rawValue, .action: "copy_section"])
         Haptics.selection()
         withAnimation(DesignSystem.Motion.snappy) { copied = true }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {

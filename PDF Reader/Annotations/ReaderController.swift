@@ -208,13 +208,14 @@ final class ReaderController {
 
     /// Adds a highlight over the current text selection using the user's
     /// configured `HighlightColor`, one annotation per visual line.
-    func highlightSelection() {
+    @discardableResult
+    func highlightSelection() -> Bool {
         guard
             let pdfView,
             let selection = pdfView.currentSelection
         else {
             Haptics.warning()
-            return
+            return false
         }
         Haptics.impact(.light)
 
@@ -240,6 +241,7 @@ final class ReaderController {
         pdfView.clearSelection()
         recordEdit(added)
         scheduleSave()
+        return !added.isEmpty
     }
 
     /// Drops a sticky-note icon at the center of the currently visible page.
@@ -354,6 +356,7 @@ final class ReaderController {
         let clamped = pageRect.intersection(page.bounds(for: pdfView.displayBox))
         guard clamped.width > 2, clamped.height > 2 else { return }
         let mark = PDFRedactor.mark(clamped, on: page)
+        AppAnalytics.log(.redactionMarked, [.option: "area"])
         Haptics.impact(.light)
         recordEdit([mark])
         refreshPendingRedactionCount()

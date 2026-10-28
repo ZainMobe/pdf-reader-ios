@@ -157,7 +157,7 @@ struct OnboardingAIPage: View {
             }
         }
         .padding(DesignSystem.Spacing.m)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .compatGlass(.rect(18))
         .shadow(color: .black.opacity(0.3), radius: 14, y: 6)
     }
 
@@ -392,7 +392,7 @@ struct OnboardingPrivacyPage: View {
                 .foregroundStyle(.white)
                 .padding(.horizontal, DesignSystem.Spacing.m)
                 .padding(.vertical, DesignSystem.Spacing.s)
-                .glassEffect(.regular, in: .capsule)
+                .compatGlass(.capsule)
                 .padding(.top, DesignSystem.Spacing.s)
                 .opacity(appeared ? 1 : 0)
                 .offset(y: appeared ? 0 : 12)

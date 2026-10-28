@@ -19,18 +19,7 @@ struct GlassChip: View {
         .font(.subheadline.weight(.medium))
         .padding(.horizontal, DesignSystem.Spacing.m)
         .padding(.vertical, DesignSystem.Spacing.s)
-        .glassEffect(glassConfig)
-    }
-
-    private var glassConfig: Glass {
-        var base: Glass = .regular
-        if let tint {
-            base = base.tint(tint)
-        }
-        if isInteractive {
-            base = base.interactive()
-        }
-        return base
+        .compatGlass(.capsule, tint: tint, interactive: isInteractive)
     }
 }
 

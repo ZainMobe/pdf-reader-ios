@@ -44,6 +44,7 @@ struct SyncStatusView: View {
         } message: {
             Text(backupResult ?? "")
         }
+        .trackScreen(.syncStatus)
     }
 
     // MARK: - Dropbox
@@ -109,7 +110,18 @@ struct SyncStatusView: View {
     private func runBackup() async {
         isBackingUp = true
         defer { isBackingUp = false }
+        let started = Date()
         let count = await backup.backup(documents)
+        AppAnalytics.log(.toolCompleted, [
+            .tool: "dropbox_backup",
+            .count: AppAnalytics.countBucket(count),
+            .failedCount: documents.count - count,
+            .durationMs: AppAnalytics.milliseconds(since: started),
+            .success: count > 0,
+        ])
+        if count > 0 {
+            AppAnalytics.feature(.dropboxBackup, source: AnalyticsSource.settings.rawValue)
+        }
         if count > 0 {
             Haptics.success()
             backupResult = "Backed up \(count) of \(documents.count) \(documents.count == 1 ? "document" : "documents") to Dropbox."

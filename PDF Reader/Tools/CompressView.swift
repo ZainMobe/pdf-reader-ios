@@ -34,6 +34,7 @@ struct CompressView: View {
                 }
             }
         }
+        .trackScreen(.toolCompress)
     }
 
     private var formContent: some View {
@@ -102,7 +103,7 @@ struct CompressView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Compress") { apply() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                         .disabled(selectedDoc == nil || isWorking)
                 }
             }
@@ -114,7 +115,7 @@ struct CompressView: View {
                             .font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -134,6 +135,7 @@ struct CompressView: View {
         guard let doc = selectedDoc else { return }
         let originalSize = doc.fileSize
         isWorking = true
+        let started = Date()
         // Defer one frame so the progress overlay renders before the
         // synchronous compression starts.
         DispatchQueue.main.async {
@@ -146,12 +148,18 @@ struct CompressView: View {
                     : 0
                 let from = ByteCountFormatter.string(fromByteCount: originalSize, countStyle: .file)
                 let to = ByteCountFormatter.string(fromByteCount: compressed.fileSize, countStyle: .file)
+                AppAnalytics.toolCompleted(.compress, startedAt: started, pageCount: compressed.pageCount, [
+                    .option: String(describing: quality),
+                    .savedPercent: pct,
+                    .sizeBucket: AppAnalytics.sizeBucket(bytes: originalSize),
+                ])
                 success = ToolSuccessResult(
                     title: "PDF Compressed",
                     summary: "\(pct)% smaller — \(from) → \(to)",
                     documents: [compressed]
                 )
             } catch {
+                AppAnalytics.toolFailed(.compress, error: error)
                 self.error = error.localizedDescription
                 isWorking = false
             }

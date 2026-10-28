@@ -36,6 +36,7 @@ struct SplitPDFView: View {
                 }
             }
         }
+        .trackScreen(.toolSplit)
     }
 
     private var formContent: some View {
@@ -87,7 +88,7 @@ struct SplitPDFView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Split") { split() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                         .disabled(selectedDoc == nil || isWorking)
                 }
             }
@@ -98,7 +99,7 @@ struct SplitPDFView: View {
                         Text("Splitting…").font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -118,18 +119,21 @@ struct SplitPDFView: View {
         guard let doc = selectedDoc else { return }
         let at = splitAfter
         isWorking = true
+        let started = Date()
         Task {
             defer { isWorking = false }
             await DocumentStorage.ensureDownloaded(at: doc.fileURL)
             do {
                 let parts = try PDFOperations.split(doc, atPage: at, in: modelContext)
                 try? modelContext.save()
+                AppAnalytics.toolCompleted(.split, startedAt: started, pageCount: doc.pageCount, fileCount: 2)
                 success = ToolSuccessResult(
                     title: "PDF Split",
                     summary: "Created 2 parts — \(parts.firstPart.pageCount) + \(parts.secondPart.pageCount) pages",
                     documents: [parts.firstPart, parts.secondPart]
                 )
             } catch {
+                AppAnalytics.toolFailed(.split, error: error)
                 self.error = error.localizedDescription
             }
         }

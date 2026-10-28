@@ -12,7 +12,7 @@ struct ScanDocumentIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        IncomingFileRouter.shared.handleAppScheme(URL(string: "pdfeditor://scan")!)
+        IncomingFileRouter.shared.handleAppScheme(URL(string: "pdfeditor://scan?src=shortcut")!)
         return .result()
     }
 }
@@ -32,7 +32,7 @@ struct AskLibraryIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         var components = URLComponents(string: "pdfeditor://ask")!
-        components.queryItems = [URLQueryItem(name: "q", value: question)]
+        components.queryItems = [URLQueryItem(name: "q", value: question), URLQueryItem(name: "src", value: "shortcut")]
         IncomingFileRouter.shared.handleAppScheme(components.url!)
         return .result()
     }
@@ -112,6 +112,11 @@ struct MergePDFsIntent: AppIntent {
         }
         guard merged.pageCount > 0, let data = merged.dataRepresentation() else { throw IntentError.failed }
         let safe = DocumentStorage.sanitizedTitle(name, fallback: "Merged")
+        let mergedPages = merged.pageCount, mergedFiles = files.count
+        await MainActor.run {
+            AppAnalytics.configure()
+            AppAnalytics.toolCompleted(.merge, pageCount: mergedPages, fileCount: mergedFiles, [.source: AnalyticsSource.shortcut.rawValue])
+        }
         return .result(value: IntentFile(data: data, filename: "\(safe).pdf", type: .pdf))
     }
 }
@@ -154,6 +159,11 @@ struct ImagesToPDFIntent: AppIntent {
         try ImagesToPDF.write(imageURLs: urls, to: output, options: options)
         let data = try Data(contentsOf: output)
         let safe = DocumentStorage.sanitizedTitle(name, fallback: "Images")
+        let imageCount = images.count
+        await MainActor.run {
+            AppAnalytics.configure()
+            AppAnalytics.toolCompleted(.imagesToPDF, fileCount: imageCount, [.source: AnalyticsSource.shortcut.rawValue])
+        }
         return .result(value: IntentFile(data: data, filename: "\(safe).pdf", type: .pdf))
     }
 }
@@ -192,6 +202,10 @@ struct ExtractTextIntent: AppIntent {
         guard let pdf = PDFDocument(data: file.data) else { throw IntentError.unreadable(file.filename) }
         if pdf.isLocked { throw IntentError.locked(file.filename) }
         let text = try PDFExport.text(from: pdf, fallbackOCR: nil)
+        await MainActor.run {
+            AppAnalytics.configure()
+            AppAnalytics.log(.appEntry, [.action: "extract_text", .source: AnalyticsSource.shortcut.rawValue])
+        }
         return .result(value: text)
     }
 }
@@ -205,6 +219,10 @@ struct PageCountIntent: AppIntent {
 
     func perform() async throws -> some IntentResult & ReturnsValue<Int> {
         guard let pdf = PDFDocument(data: file.data) else { throw IntentError.unreadable(file.filename) }
+        await MainActor.run {
+            AppAnalytics.configure()
+            AppAnalytics.log(.appEntry, [.action: "page_count", .source: AnalyticsSource.shortcut.rawValue])
+        }
         return .result(value: pdf.pageCount)
     }
 }

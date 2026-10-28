@@ -32,6 +32,7 @@ struct PageNumbersView: View {
                 }
             }
         }
+        .trackScreen(.toolPageNumbers)
     }
 
     private var formContent: some View {
@@ -73,7 +74,7 @@ struct PageNumbersView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Apply") { apply() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                         .disabled(selectedDoc == nil || isWorking)
                 }
             }
@@ -84,7 +85,7 @@ struct PageNumbersView: View {
                         Text("Numbering pages…").font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert(
@@ -103,18 +104,21 @@ struct PageNumbersView: View {
     private func apply() {
         guard let doc = selectedDoc else { return }
         isWorking = true
+        let started = Date()
         Task {
             defer { isWorking = false }
             await DocumentStorage.ensureDownloaded(at: doc.fileURL)
             do {
                 let numbered = try PDFOperations.addPageNumbers(doc, in: modelContext)
                 try? modelContext.save()
+                AppAnalytics.toolCompleted(.pageNumbers, startedAt: started, pageCount: numbered.pageCount)
                 success = ToolSuccessResult(
                     title: "Page Numbers Added",
                     summary: "Numbered all \(numbered.pageCount) \(numbered.pageCount == 1 ? "page" : "pages")",
                     documents: [numbered]
                 )
             } catch {
+                AppAnalytics.toolFailed(.pageNumbers, error: error)
                 self.error = error.localizedDescription
             }
         }

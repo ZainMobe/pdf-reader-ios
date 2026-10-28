@@ -75,7 +75,7 @@ struct FileToPDFView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Convert") { convert() }
-                            .buttonStyle(.glassProminent)
+                            .compatGlassButtonStyle(prominent: true)
                             .disabled(!canConvert || isWorking)
                     }
                 }
@@ -94,7 +94,7 @@ struct FileToPDFView: View {
                         Text(progressText).font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert("Couldn't convert", isPresented: Binding(
@@ -108,6 +108,7 @@ struct FileToPDFView: View {
                 if let pickedFile { try? FileManager.default.removeItem(at: pickedFile) }
             }
         }
+        .trackScreen(.toolFileToPDF)
     }
 
     private var formContent: some View {
@@ -254,6 +255,12 @@ struct FileToPDFView: View {
         }
         let setup = paper.setup
         isWorking = true
+        let started = Date()
+        let sourceKind: String
+        switch source {
+        case .web: sourceKind = "web"
+        case .file(let url): sourceKind = url.pathExtension.lowercased().isEmpty ? "file" : url.pathExtension.lowercased()
+        }
 
         Task {
             defer { isWorking = false }
@@ -269,8 +276,10 @@ struct FileToPDFView: View {
                 try? modelContext.save()
                 var summary = "\(output.pageCount) \(output.pageCount == 1 ? "page" : "pages")"
                 if let note = output.note { summary += ". " + note }
+                AppAnalytics.toolCompleted(.fileToPDF, startedAt: started, pageCount: output.pageCount, [.kind: sourceKind])
                 success = ToolSuccessResult(title: "PDF Created", summary: summary, documents: [doc])
             } catch {
+                AppAnalytics.log(.toolFailed, [.tool: AnalyticsTool.fileToPDF.rawValue, .kind: sourceKind, .errorType: AppAnalytics.errorLabel(error)])
                 self.error = error.localizedDescription
             }
         }

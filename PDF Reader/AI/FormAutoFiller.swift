@@ -1,5 +1,4 @@
 import Foundation
-import FoundationModels
 import PDFKit
 
 /// On-device form auto-fill. Detects text widget annotations in a PDF and
@@ -38,6 +37,16 @@ final class FormAutoFiller {
         state = .detecting
         suggestions = []
         let url = document.fileURL
+        let generator: any AIGenerator
+        do {
+            generator = try AIEngine.resolve()
+        } catch {
+            AIAnalyticsRun.unavailable(.formFill, error: error)
+            state = .failed(AIError.from(error).userMessage)
+            return
+        }
+        let backend = generator.backend
+        let contextBudget = generator.textBudget(onDevice: 3_000, cloud: 40_000)
 
         task = Task { [weak self] in
             guard let self else { return }
@@ -65,7 +74,7 @@ final class FormAutoFiller {
                     }
                 }
                 if !scan.detected.isEmpty {
-                    scan.documentText = String((pdf.string ?? "").prefix(3_000))
+                    scan.documentText = String((pdf.string ?? "").prefix(contextBudget))
                 }
                 return scan
             }.value
@@ -81,11 +90,13 @@ final class FormAutoFiller {
             }
             let detected = scan.detected
             guard !detected.isEmpty else {
+                AIAnalyticsRun.unavailable(.formFill, reason: "no_fields")
                 self.state = .noFields
                 return
             }
 
             self.state = .suggesting
+            let analytics = AIAnalyticsRun(.formFill, backend: backend, [.count: AppAnalytics.countBucket(detected.count)])
 
             // Build prompt with document context + field names.
             let documentText = scan.documentText
@@ -103,16 +114,15 @@ final class FormAutoFiller {
                 """
                 : ""
 
-            let instructions = Instructions("""
+            let instructions = """
                 You suggest plausible values for PDF form fields based on the document's \
                 context and the user's saved profile (if provided). Use profile values \
                 directly when a field clearly asks for them (name, email, phone, address). \
                 Only suggest other values you can reasonably infer from the document text. \
                 If you can't infer a value, return an empty string for that field. \
-                Match the exact field names — don't invent new fields.
-                """)
-            let session = LanguageModelSession(instructions: instructions)
-            let prompt = Prompt("""
+                Match the exact field names; don't invent new fields.
+                """
+            let prompt = """
                 Document title: \(document.title)
 
                 Document context:
@@ -120,15 +130,16 @@ final class FormAutoFiller {
 
                 Form fields to fill:
                 \(fieldList)
-                """)
+                """
 
             do {
-                let response = try await session.respond(
-                    to: prompt,
+                let response = try await generator.respond(
+                    instructions: instructions,
+                    prompt: prompt,
                     generating: FormSuggestionSet.self
                 )
 
-                let suggested = response.content.values
+                let suggested = response.values
                 let mapped = detected.compactMap { field -> FieldSuggestion? in
                     let match = suggested.first { $0.fieldName == field.name }
                     return FieldSuggestion(
@@ -140,38 +151,28 @@ final class FormAutoFiller {
                 }
                 self.suggestions = mapped
                 self.state = .ready
+                analytics.succeeded(outputChars: nil, [.count: AppAnalytics.countBucket(mapped.filter { !$0.suggestedValue.isEmpty }.count)])
             } catch is CancellationError {
+                analytics.cancelled()
                 return
-            } catch let error as LanguageModelSession.GenerationError {
-                if Task.isCancelled { return }
-                self.state = .failed(Self.message(for: error))
             } catch {
-                if Task.isCancelled { return }
-                self.state = .failed(error.localizedDescription)
+                if Task.isCancelled { analytics.cancelled(); return }
+                analytics.failed(error)
+                self.state = .failed(Self.message(for: AIError.from(error)))
             }
         }
     }
 
-    private static func message(for error: LanguageModelSession.GenerationError) -> String {
+    private static func message(for error: AIError) -> String {
         switch error {
-        case .exceededContextWindowSize:
-            return "This form has too many fields for the on-device model to fill in one pass."
-        case .decodingFailure:
+        case .contextTooLong:
+            return "This form has too many fields for the AI model to fill in one pass."
+        case .decodingFailed:
             return "The model couldn't produce usable suggestions for this form."
-        case .guardrailViolation:
-            return "This document's content was blocked by on-device safety filters."
-        case .unsupportedLanguageOrLocale:
-            return "The on-device model doesn't support the language used in this form."
-        case .assetsUnavailable:
-            return "Apple Intelligence assets aren't ready yet. Try again in a few minutes."
-        case .rateLimited:
-            return "Too many AI requests right now. Please try again shortly."
-        case .concurrentRequests:
-            return "Another AI request is in progress. Try again in a moment."
-        case .refusal:
+        case .refused:
             return "The model declined to suggest values for this form."
         default:
-            return error.localizedDescription
+            return error.userMessage
         }
     }
 
@@ -237,6 +238,11 @@ final class FormAutoFiller {
             return
         }
         state = .done(applied: applied)
+        AppAnalytics.log(.aiResultAction, [
+            .aiAction: AnalyticsAIAction.formFill.rawValue,
+            .action: "apply",
+            .count: AppAnalytics.countBucket(applied),
+        ])
     }
 
     func cancel() {
@@ -247,17 +253,33 @@ final class FormAutoFiller {
 
 /// Shape of the AI response. Each suggestion has the exact field name plus
 /// a value the model believes fits the document context.
-@Generable
-struct FormSuggestionSet {
-    @Guide(description: "Suggested values for each form field")
+nonisolated struct FormSuggestionSet: AIStructured {
     let values: [FormFieldValue]
+
+    static var jsonSchema: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "values": [
+                    "type": "array",
+                    "description": "Suggested values for each form field",
+                    "items": [
+                        "type": "object",
+                        "properties": [
+                            "fieldName": ["type": "string", "description": "Exact field name as provided in the prompt"],
+                            "suggestedValue": ["type": "string", "description": "Suggested value, or empty string if not inferrable"],
+                        ],
+                        "required": ["fieldName", "suggestedValue"],
+                    ],
+                ],
+            ],
+            "required": ["values"],
+        ]
+    }
 }
 
-@Generable
-struct FormFieldValue {
-    @Guide(description: "Exact field name as provided in the prompt")
+nonisolated struct FormFieldValue: Decodable, Sendable {
     let fieldName: String
 
-    @Guide(description: "Suggested value, or empty string if not inferrable")
     let suggestedValue: String
 }

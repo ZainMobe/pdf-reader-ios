@@ -67,6 +67,8 @@ final class DropboxAuthManager {
         DropboxClientsManager.unlinkClients()
         isSignedIn = false
         accountName = nil
+        AppAnalytics.log(.cloudServiceDisconnected, [.service: "dropbox"])
+        AppAnalytics.setUserProperty(.dropboxLinked, "false")
     }
 
     /// The authorized client, or `nil` if the user isn't signed in.
@@ -78,8 +80,14 @@ final class DropboxAuthManager {
         switch result {
         case .success:
             isSignedIn = DropboxClientsManager.authorizedClient != nil
+            AppAnalytics.log(.cloudServiceConnected, [.service: "dropbox", .success: isSignedIn])
+            AppAnalytics.setUserProperty(.dropboxLinked, isSignedIn ? "true" : "false")
             refreshAccount()
-        case .cancel, .error, .none:
+        case .cancel:
+            AppAnalytics.log(.cloudServiceConnected, [.service: "dropbox", .success: false, .errorType: "cancelled"])
+            isSignedIn = false
+        case .error, .none:
+            AppAnalytics.log(.cloudServiceConnected, [.service: "dropbox", .success: false, .errorType: "error"])
             isSignedIn = false
         }
     }

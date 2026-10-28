@@ -60,7 +60,7 @@ struct ProtectPDFView: View {
                     }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Protect") { apply() }
-                            .buttonStyle(.glassProminent)
+                            .compatGlassButtonStyle(prominent: true)
                             .disabled(selectedDoc == nil || !passwordsMatch || isWorking
                                       || (useSeparateOwnerPassword && ownerPassword.isEmpty))
                     }
@@ -73,7 +73,7 @@ struct ProtectPDFView: View {
                         Text("Encrypting…").font(.subheadline)
                     }
                     .padding(DesignSystem.Spacing.xl)
-                    .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                    .compatGlass(.rect(DesignSystem.Radius.medium))
                 }
             }
             .alert("Couldn't protect", isPresented: Binding(
@@ -84,6 +84,7 @@ struct ProtectPDFView: View {
                 Text(error ?? "")
             }
         }
+        .trackScreen(.toolProtect)
     }
 
     private var formContent: some View {
@@ -189,12 +190,18 @@ struct ProtectPDFView: View {
             rememberPassword: rememberOnThisDevice
         )
         isWorking = true
+        let started = Date()
         Task {
             defer { isWorking = false }
             do {
                 await DocumentStorage.ensureDownloaded(at: doc.fileURL)
                 let result = try PDFOperations.protect(doc, request: request, in: modelContext)
                 try? modelContext.save()
+                let allowed = [allowPrinting ? "print" : nil, allowCopying ? "copy" : nil, allowEditing ? "edit" : nil].compactMap { $0 }
+                AppAnalytics.toolCompleted(.protect, startedAt: started, pageCount: result.pageCount, [
+                    .option: allowed.isEmpty ? "none" : allowed.joined(separator: ","),
+                    .value: replaceOriginal ? "replace" : "copy",
+                ])
                 success = ToolSuccessResult(
                     title: "PDF Protected",
                     summary: replaceOriginal
@@ -203,6 +210,7 @@ struct ProtectPDFView: View {
                     documents: [result]
                 )
             } catch {
+                AppAnalytics.toolFailed(.protect, error: error)
                 self.error = error.localizedDescription
             }
         }

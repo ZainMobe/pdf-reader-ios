@@ -71,6 +71,9 @@ struct ScannerLauncher: View {
             switch status {
             case .authorized:
                 DocumentScannerView { result in
+                    if case .success(let pages) = result, pages.isEmpty {
+                        AppAnalytics.log(.scanFailed, [.errorType: "cancelled"])
+                    }
                     onCompletion(result)
                     dismiss()
                 }
@@ -84,6 +87,7 @@ struct ScannerLauncher: View {
                 deniedState
             }
         }
+        .trackScreen(.scanner)
     }
 
     private var deniedState: some View {
@@ -97,9 +101,9 @@ struct ScannerLauncher: View {
                 }
                 HStack(spacing: DesignSystem.Spacing.s) {
                     Button("Cancel") { dismiss() }
-                        .buttonStyle(.glass)
+                        .compatGlassButtonStyle()
                     Button("Open Settings") { openSettings() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                 }
             }
             .padding(DesignSystem.Spacing.xl)
@@ -108,6 +112,7 @@ struct ScannerLauncher: View {
 
     private func requestAccess() async {
         let granted = await AVCaptureDevice.requestAccess(for: .video)
+        AppAnalytics.settingChanged("camera_permission", granted ? "granted" : "denied")
         status = granted ? .authorized : .denied
     }
 

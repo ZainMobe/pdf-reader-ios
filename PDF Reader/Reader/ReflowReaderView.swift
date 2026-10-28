@@ -126,6 +126,7 @@ struct ReflowReaderView: View {
             }
             .task { await load() }
         }
+        .trackScreen(.reflowReader)
     }
 
     private func pageMarker(_ index: Int) -> some View {

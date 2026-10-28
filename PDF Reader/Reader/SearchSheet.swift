@@ -55,6 +55,7 @@ struct SearchSheet: View {
                 searchTask?.cancel()
             }
         }
+        .trackScreen(.searchInDocument)
     }
 
     private var searchField: some View {
@@ -92,6 +93,7 @@ struct SearchSheet: View {
         } else if !results.isEmpty {
             List(results) { match in
                 Button {
+                    AppAnalytics.log(.readerAction, [.action: "find_result_opened"])
                     onSelect(match.pageIndex, match.bounds)
                     dismiss()
                 } label: {
@@ -147,6 +149,12 @@ struct SearchSheet: View {
             guard !Task.isCancelled else { return }
             results = matches
             isSearching = false
+            AppAnalytics.log(.readerAction, [
+                .action: "find_query",
+                .queryLength: AppAnalytics.countBucket(trimmed.count),
+                .count: matches.count,
+                .hasResults: !matches.isEmpty,
+            ])
         }
     }
 

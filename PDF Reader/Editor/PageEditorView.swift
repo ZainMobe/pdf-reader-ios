@@ -42,7 +42,7 @@ struct PageEditorView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { saveAndDismiss() }
-                        .buttonStyle(.glassProminent)
+                        .compatGlassButtonStyle(prominent: true)
                 }
             }
             .alert(
@@ -64,6 +64,7 @@ struct PageEditorView: View {
             editor = PageEditor(url: url)
             isLoading = false
         }
+        .trackScreen(.pageEditor)
     }
 
     @ViewBuilder
@@ -148,6 +149,12 @@ struct PageEditorView: View {
         do {
             try editor.save()
             let newPageCount = editor.pageCount
+            AppAnalytics.log(.pagesEdited, [
+                .pageBucket: AppAnalytics.pageBucket(newPageCount),
+                .value: "moved:\(editor.movedCount) deleted:\(editor.deletedCount) rotated:\(editor.rotatedCount)",
+                .count: editor.movedCount + editor.deletedCount + editor.rotatedCount,
+            ])
+            AppAnalytics.feature(.editPages, source: AnalyticsSource.reader.rawValue)
             document.pageCount = newPageCount
             // Keep Library metadata and the cached first-page thumbnail in
             // step with the rewritten file.
@@ -166,6 +173,7 @@ struct PageEditorView: View {
             onSave()
             dismiss()
         } catch {
+            AppAnalytics.log(.toolFailed, [.tool: "edit_pages", .errorType: AppAnalytics.errorLabel(error)])
             saveError = error.localizedDescription
         }
     }

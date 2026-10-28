@@ -15,7 +15,7 @@ nonisolated enum WidgetSnapshot {
         /// File name of the thumbnail inside `thumbnailsURL`, if written.
         var thumbnail: String?
 
-        var deepLink: URL { URL(string: "pdfeditor://document/\(id.uuidString)")! }
+        var deepLink: URL { URL(string: "pdfeditor://document/\(id.uuidString)?src=widget")! }
     }
 
     struct Payload: Codable {

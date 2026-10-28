@@ -18,6 +18,7 @@ struct UpgradeBanner: View {
         if shouldShow {
             Button {
                 Haptics.impact(.light)
+                AppAnalytics.log(.upgradeBannerTapped)
                 onTap()
             } label: {
                 HStack(spacing: DesignSystem.Spacing.m) {
@@ -44,7 +45,7 @@ struct UpgradeBanner: View {
                 .padding(DesignSystem.Spacing.m)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-                .glassEffect(.regular, in: .rect(cornerRadius: DesignSystem.Radius.medium))
+                .compatGlass(.rect(DesignSystem.Radius.medium))
                 .overlay(
                     RoundedRectangle(cornerRadius: DesignSystem.Radius.medium)
                         .strokeBorder(.tint.opacity(0.35), lineWidth: 1)
@@ -56,6 +57,7 @@ struct UpgradeBanner: View {
                     Haptics.selection()
                     dismissedAt = Date.now.timeIntervalSince1970
                     refreshTick = UUID()
+                    AppAnalytics.log(.upgradeBannerDismissed)
                 } label: {
                     Label("Not now", systemImage: "clock")
                 }
